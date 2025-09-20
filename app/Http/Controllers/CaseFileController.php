@@ -83,7 +83,7 @@ class CaseFileController extends Controller
 
         // Create case database and reference in one step
         try {
-            $caseReference = $this->caseDatabaseService->createCaseDatabase([]);
+            $caseReference = $this->caseDatabaseService->createCaseDatabase();
 
             // Switch to the case database and run migrations
             $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);

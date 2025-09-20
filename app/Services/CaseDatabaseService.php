@@ -21,57 +21,47 @@ class CaseDatabaseService
         $this->databaseManager = $databaseManager;
     }
 
-    public function createCaseDatabase(array $caseData): CaseReference
+    public function createCaseDatabase(): CaseReference
     {
         try {
-            // Check if database already exists for this case number
-            $existingConnection = CaseReference::where('case_number', $caseData['case_number'])->first();
-            if ($existingConnection) {
-                throw new Exception("Database already exists for case: {$caseData['case_number']}");
-            }
-
-            // Create temporary case reference to get ID for database creation
-            $tempCaseReference = CaseReference::create([
-                'case_number' => $caseData['case_number'],
-                'title' => $caseData['title'],
-                'status' => 'draft',
-                'initiated_at' => $caseData['initiated_at'] ?? now(),
-                'created_by' => $caseData['created_by'] ?? auth()->id(),
-                'database_name' => 'temp', // Will be updated after KAS API call
+            // Create case reference for database creation
+            $caseReference = CaseReference::create([
+                'database_name' => 'temp', // Will be updated after database creation
                 'database_user' => 'temp',
                 'database_host' => 'temp',
                 'connection_name' => 'temp',
             ]);
 
-            // Create database via KAS API
-            $databaseInfo = $this->kasApiService->createCaseDatabase(
-                $tempCaseReference->id,
-                "Database for case: {$tempCaseReference->title}"
+            // Use local database service for development
+            $localService = new LocalCaseDatabaseService;
+            $databaseInfo = $localService->createLocalCaseDatabase(
+                $caseReference->id,
+                "Database for case: {$caseReference->id}"
             );
 
             if (! $databaseInfo['success']) {
-                $tempCaseReference->delete();
-                throw new Exception('Failed to create database via KAS API');
+                $caseReference->delete();
+                throw new Exception('Failed to create case database: '.($databaseInfo['error'] ?? 'Unknown error'));
             }
 
             // Update with actual database connection info
             $password = $databaseInfo['database_password'];
 
             // Only encrypt password if not empty (for local SQLite testing, password is empty)
-            if (!empty($password)) {
+            if (! empty($password)) {
                 $password = encrypt($password);
             }
 
-            $tempCaseReference->update([
+            $caseReference->update([
                 'database_name' => $databaseInfo['database_name'],
                 'database_user' => $databaseInfo['database_user'],
                 'database_password' => $password,
                 'database_host' => $databaseInfo['database_host'],
-                'connection_name' => $this->generateConnectionName($tempCaseReference->id),
+                'connection_name' => $this->generateConnectionName($caseReference->id),
                 'is_active' => true,
             ]);
 
-            $connection = $tempCaseReference;
+            $connection = $caseReference;
 
             try {
                 // Configure Laravel database connection
@@ -102,7 +92,7 @@ class CaseDatabaseService
 
         } catch (Exception $e) {
             Log::error('Failed to create case database', [
-                'case_reference_id' => isset($tempCaseReference) ? $tempCaseReference->id : 'unknown',
+                'case_reference_id' => isset($caseReference) ? $caseReference->id : 'unknown',
                 'error' => $e->getMessage(),
             ]);
 
