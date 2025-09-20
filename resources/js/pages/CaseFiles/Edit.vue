@@ -176,18 +176,6 @@ const props = defineProps({
     caseReference: Object,
 })
 
-// Debug logging to see what data we're receiving
-console.log('Edit.vue - Props received:', {
-    caseFile: props.caseFile,
-    caseReference: props.caseReference
-})
-
-console.log('Edit.vue - caseReference ID:', props.caseReference?.id)
-console.log('Edit.vue - caseFile ID:', props.caseFile?.id)
-console.log('Edit.vue - caseReference keys:', Object.keys(props.caseReference || {}))
-console.log('Edit.vue - caseFile keys:', Object.keys(props.caseFile || {}))
-console.log('Edit.vue - caseReference database_name:', props.caseReference?.database_name)
-console.log('Edit.vue - caseFile database_name:', props.caseFile?.database_name)
 
 const form = useForm({
     case_number: props.caseFile?.case_number || '',
