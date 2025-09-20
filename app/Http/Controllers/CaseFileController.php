@@ -119,44 +119,68 @@ class CaseFileController extends Controller
                         throw new \Exception('case_files table does not exist in tenant database after migration. Migration output: ' . $migrateOutput);
                     }
 
-                    // Now create the REAL case file directly in the tenant database
+                    // Now create the REAL case file directly in the tenant database using Query Builder
                     logger()->info('Creating case file for tenant database', [
                         'connection_name' => $connectionName,
                         'validated_data' => $validated
                     ]);
 
-                    // Force use of tenant connection by explicitly setting it
-                    \DB::setDefaultConnection($connectionName);
+                    // Prepare the data for insertion
+                    $tenantCaseData = [
+                        'id' => \Str::uuid(),
+                        'case_number' => $validated['case_number'],
+                        'title' => $validated['title'],
+                        'description' => $validated['description'] ?? null,
+                        'status' => 'active',
+                        'dispute_value' => $validated['dispute_value'] ?? null,
+                        'currency' => $validated['currency'] ?? null,
+                        'initiated_at' => $validated['initiated_at'] ?? now(),
+                        'jurisdiction' => $validated['jurisdiction'] ?? null,
+                        'case_category' => $validated['case_category'] ?? null,
+                        'complexity_level' => $validated['complexity_level'] ?? null,
+                        'urgency_level' => $validated['urgency_level'] ?? null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
 
-                    $realCaseFile = new CaseFile();
-                    $realCaseFile->setConnection($connectionName);
-                    $realCaseFile->fill($validated);
-
-                    // Only set created_by if the column exists in tenant database
+                    // Only add created_by if the column exists in tenant database
                     if (\Schema::connection($connectionName)->hasColumn('case_files', 'created_by')) {
-                        $realCaseFile->created_by = auth()->id();
+                        $tenantCaseData['created_by'] = auth()->id();
                         logger()->info('Set created_by for tenant case', ['created_by' => auth()->id()]);
                     }
 
-                    logger()->info('Saving case data to tenant database', [
+                    logger()->info('Inserting case data directly to tenant database', [
                         'connection_name' => $connectionName,
-                        'case_data' => $realCaseFile->toArray(),
-                        'current_connection' => $realCaseFile->getConnectionName()
+                        'case_data' => $tenantCaseData
                     ]);
 
-                    $realCaseFile->save();
+                    // Use Query Builder to force insertion into tenant database
+                    $insertResult = \DB::connection($connectionName)
+                        ->table('case_files')
+                        ->insert($tenantCaseData);
 
-                    // Reset default connection back to main
-                    \DB::setDefaultConnection('mysql');
+                    $tenantCaseId = $tenantCaseData['id'];
 
-                    logger()->info('Case data saved to tenant database', [
-                        'tenant_case_id' => $realCaseFile->id,
-                        'connection_name' => $connectionName
+                    logger()->info('Case data inserted to tenant database', [
+                        'tenant_case_id' => $tenantCaseId,
+                        'connection_name' => $connectionName,
+                        'insert_result' => $insertResult
+                    ]);
+
+                    // Verify the case was actually saved in tenant database
+                    $verifyCase = \DB::connection($connectionName)
+                        ->table('case_files')
+                        ->where('id', $tenantCaseId)
+                        ->first();
+
+                    logger()->info('Verification: Case in tenant database', [
+                        'found_in_tenant' => $verifyCase ? 'YES' : 'NO',
+                        'case_data' => $verifyCase
                     ]);
 
                     // Update the landlord record with tenant case ID for reference and remove temp data
                     $tempCaseFile->update([
-                        'tenant_case_id' => $realCaseFile->id,
+                        'tenant_case_id' => $tenantCaseId,
                         'database_connection_id' => $connection->id,
                         // Clear the temp data from landlord - keep only references
                         'description' => null,
@@ -170,7 +194,7 @@ class CaseFileController extends Controller
 
                     logger()->info('Landlord record updated with tenant references', [
                         'landlord_case_id' => $tempCaseFile->id,
-                        'tenant_case_id' => $realCaseFile->id
+                        'tenant_case_id' => $tenantCaseId
                     ]);
 
                     // Return the temp case file (which now acts as landlord reference)
