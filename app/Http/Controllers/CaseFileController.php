@@ -50,6 +50,9 @@ class CaseFileController extends Controller
             }
         }
 
+        // Switch back to main database after processing all cases
+        $this->caseDatabaseService->switchBackToMainDatabase();
+
         return Inertia::render('CaseFiles/Index', [
             'cases' => [
                 'data' => $cases,
@@ -248,6 +251,9 @@ class CaseFileController extends Controller
                     // Return the case reference
                     $caseFile = $caseReference;
 
+                    // Switch back to main database
+                    $this->caseDatabaseService->switchBackToMainDatabase();
+
                 } catch (\Exception $e) {
                     logger()->error('Failed to setup tenant database or save data', [
                         'connection_name' => $connectionName,
@@ -259,6 +265,9 @@ class CaseFileController extends Controller
                     // Continue without failing the entire case creation
                     // The case will exist in landlord DB even if tenant setup fails
                     $caseFile = $caseReference;
+
+                    // Switch back to main database even if tenant setup failed
+                    $this->caseDatabaseService->switchBackToMainDatabase();
                 }
             } else {
                 $caseFile = $caseReference;
@@ -320,6 +329,9 @@ class CaseFileController extends Controller
             abort(404, 'Case file not found or tenant database unavailable');
         }
 
+        // Switch back to main database after reading tenant data
+        $this->caseDatabaseService->switchBackToMainDatabase();
+
         return Inertia::render('CaseFiles/Show', [
             'caseFile' => $caseFile,
             'caseReference' => $caseReference,
@@ -361,6 +373,9 @@ class CaseFileController extends Controller
         if (! $caseFile) {
             abort(404, 'Case file not found or tenant database unavailable');
         }
+
+        // Switch back to main database after reading tenant data
+        $this->caseDatabaseService->switchBackToMainDatabase();
 
         return Inertia::render('CaseFiles/Edit', [
             'caseFile' => $caseFile,
@@ -410,6 +425,9 @@ class CaseFileController extends Controller
                 'connection' => $connectionName,
             ]);
 
+            // Switch back to main database after successful update
+            $this->caseDatabaseService->switchBackToMainDatabase();
+
             return redirect()->route('cases.show', $case)
                 ->with('success', 'Falldatei erfolgreich aktualisiert.');
 
@@ -420,6 +438,9 @@ class CaseFileController extends Controller
                 'connection' => $connectionName,
                 'error' => $e->getMessage(),
             ]);
+
+            // Switch back to main database even if update failed
+            $this->caseDatabaseService->switchBackToMainDatabase();
 
             return redirect()->back()
                 ->withInput()

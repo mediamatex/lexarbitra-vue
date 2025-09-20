@@ -172,7 +172,36 @@ class CaseDatabaseService
         // Ensure the connection is configured
         $this->configureDatabaseConnection($caseReference);
 
+        // Store the original default connection
+        $originalConnection = Config::get('database.default');
+
+        // Switch to the tenant database as the default connection
+        Config::set('database.default', $caseReference->connection_name);
+
+        // Clear any cached connections to ensure we use the new default
+        $this->databaseManager->purge();
+
+        Log::info('Switched database connection', [
+            'from' => $originalConnection,
+            'to' => $caseReference->connection_name,
+            'case_reference_id' => $caseReference->id,
+        ]);
+
         return $caseReference->connection_name;
+    }
+
+    public function switchBackToMainDatabase(): void
+    {
+        // Switch back to the main application database
+        $mainConnection = env('DB_CONNECTION', 'sqlite');
+        Config::set('database.default', $mainConnection);
+
+        // Clear any cached connections
+        $this->databaseManager->purge();
+
+        Log::info('Switched back to main database', [
+            'connection' => $mainConnection,
+        ]);
     }
 
     private function configureDatabaseConnection(CaseReference $caseReference): void
