@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CaseFile;
 use App\Models\CaseReference;
 use App\Services\CaseDatabaseService;
 use Illuminate\Http\Request;
@@ -63,7 +62,7 @@ class CaseFileController extends Controller
                     // Test tenant database connection first
                     logger()->info('Testing tenant database connection', [
                         'connection_name' => $connectionName,
-                        'case_id' => $tempCaseFile->id
+                        'case_id' => $caseReference->id
                     ]);
 
                     $testConnection = \DB::connection($connectionName)->getPdo();
@@ -169,40 +168,41 @@ class CaseFileController extends Controller
                         'case_data' => $verifyCase
                     ]);
 
-                    // Update the landlord record with tenant case ID for reference
-                    $tempCaseFile->update([
+                    // Update the case reference with tenant case ID
+                    $caseReference->update([
                         'tenant_case_id' => $tenantCaseId,
-                        'database_connection_id' => $connection->id,
                         'status' => 'active', // Update status once tenant case is created
                     ]);
 
-                    logger()->info('Landlord record updated with tenant references', [
-                        'landlord_case_id' => $tempCaseFile->id,
+                    logger()->info('Case reference updated with tenant case ID', [
+                        'case_reference_id' => $caseReference->id,
                         'tenant_case_id' => $tenantCaseId
                     ]);
 
-                    // Return the temp case file (which now acts as landlord reference)
-                    $caseFile = $tempCaseFile;
+                    // Return the case reference
+                    $caseFile = $caseReference;
 
                 } catch (\Exception $e) {
                     logger()->error('Failed to setup tenant database or save data', [
                         'connection_name' => $connectionName,
-                        'case_id' => $tempCaseFile->id,
+                        'case_id' => $caseReference->id,
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString()
                     ]);
 
                     // Continue without failing the entire case creation
                     // The case will exist in landlord DB even if tenant setup fails
-                    $caseFile = $tempCaseFile;
+                    $caseFile = $caseReference;
                 }
             } else {
-                $caseFile = $tempCaseFile;
+                $caseFile = $caseReference;
             }
 
         } catch (\Exception $e) {
             // If database creation fails, clean up and show error
-            $tempCaseFile->delete();
+            if (isset($caseReference)) {
+                $caseReference->delete();
+            }
 
             logger()->error('Failed to create case database', [
                 'case_number' => $validated['case_number'],
@@ -218,97 +218,82 @@ class CaseFileController extends Controller
             ->with('success', 'Falldatei erfolgreich erstellt.');
     }
 
-    public function show(CaseFile $caseFile): Response
+    public function show(CaseReference $caseReference): Response
     {
-        // Load the database connection info first
-        $caseFile->load(['databaseConnection']);
-
         // If we have a tenant database, get the full case data from there
         $tenantCaseData = null;
-        if ($caseFile->database_connection_id && $caseFile->tenant_case_id) {
-            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseFile);
+        if ($caseReference->tenant_case_id) {
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
 
             if ($connectionName) {
                 try {
-                    $tenantCase = CaseFile::on($connectionName)
-                        ->with([
-                            'referee',
-                            'participants.user',
-                            'parties',
-                            'documents'
-                        ])
-                        ->find($caseFile->tenant_case_id);
+                    // Use raw query to get tenant case data since we don't have Eloquent models for tenant DB
+                    $tenantCase = \DB::connection($connectionName)
+                        ->table('case_files')
+                        ->where('id', $caseReference->tenant_case_id)
+                        ->first();
 
                     $tenantCaseData = $tenantCase;
                 } catch (\Exception $e) {
                     logger()->error('Failed to load tenant case data', [
-                        'landlord_case_id' => $caseFile->id,
-                        'tenant_case_id' => $caseFile->tenant_case_id,
+                        'case_reference_id' => $caseReference->id,
+                        'tenant_case_id' => $caseReference->tenant_case_id,
                         'error' => $e->getMessage()
                     ]);
                 }
             }
         }
 
-        // Use tenant data if available, otherwise fall back to landlord data
-        $displayCase = $tenantCaseData ?? $caseFile;
+        // Use tenant data if available, otherwise fall back to reference data
+        $displayCase = $tenantCaseData ?? $caseReference;
 
         return Inertia::render('CaseFiles/Show', [
             'caseFile' => $displayCase,
             'hasTenantDatabase' => $tenantCaseData !== null,
-            'landlordCase' => $tenantCaseData ? $caseFile : null,
+            'caseReference' => $caseReference,
         ]);
     }
 
-    public function edit(CaseFile $caseFile): Response
+    public function edit(CaseReference $caseReference): Response
     {
         return Inertia::render('CaseFiles/Edit', [
-            'caseFile' => $caseFile,
+            'caseFile' => $caseReference,
         ]);
     }
 
-    public function update(Request $request, CaseFile $caseFile)
+    public function update(Request $request, CaseReference $caseReference)
     {
         $validated = $request->validate([
-            'case_number' => 'required|string|unique:case_files,case_number,' . $caseFile->id,
+            'case_number' => 'required|string|unique:case_references,case_number,' . $caseReference->id,
             'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
             'status' => 'nullable|string',
-            'dispute_value' => 'nullable|numeric|min:0',
-            'currency' => 'nullable|string|size:3',
-            'jurisdiction' => 'nullable|string',
-            'case_category' => 'nullable|string',
-            'complexity_level' => 'nullable|string',
-            'urgency_level' => 'nullable|string',
         ]);
 
-        $caseFile->update($validated);
+        $caseReference->update($validated);
 
-        return redirect()->route('cases.show', $caseFile)
+        return redirect()->route('cases.show', $caseReference)
             ->with('success', 'Falldatei erfolgreich aktualisiert.');
     }
 
-    public function destroy(CaseFile $caseFile)
+    public function destroy(CaseReference $caseReference)
     {
         // Delete case database
         try {
-            $this->caseDatabaseService->deleteCaseDatabase($caseFile);
+            $this->caseDatabaseService->deleteCaseDatabase($caseReference);
         } catch (\Exception $e) {
             logger()->error('Failed to delete case database', [
-                'case_id' => $caseFile->id,
+                'case_reference_id' => $caseReference->id,
                 'error' => $e->getMessage()
             ]);
         }
-
-        $caseFile->delete();
 
         return redirect()->route('cases.index')
             ->with('success', 'Falldatei erfolgreich gelöscht.');
     }
 
-    public function testDatabase(CaseFile $caseFile)
+    public function testDatabase(CaseReference $caseReference)
     {
-        $result = $this->caseDatabaseService->testCaseDatabase($caseFile);
+        $result = $this->caseDatabaseService->testCaseDatabase($caseReference);
 
         return response()->json($result);
     }

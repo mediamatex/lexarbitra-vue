@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CaseFileController;
+use App\Models\CaseReference;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -14,8 +15,8 @@ Route::get('dashboard', function () {
 
 // Case management routes
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('cases', CaseFileController::class);
-    Route::post('cases/{caseFile}/test-database', [CaseFileController::class, 'testDatabase'])
+    Route::resource('cases', CaseFileController::class)->parameters(['case' => 'caseReference']);
+    Route::post('cases/{caseReference}/test-database', [CaseFileController::class, 'testDatabase'])
         ->name('cases.test-database');
 });
 
