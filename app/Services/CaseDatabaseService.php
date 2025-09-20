@@ -180,8 +180,12 @@ class CaseDatabaseService
         $connectionName = $caseReference->connection_name;
         $host = $caseReference->database_host;
 
-        // Check if this is a SQLite database (indicated by .sqlite extension in host path)
-        if (str_contains($host, '.sqlite')) {
+        // Determine database type based on environment and host format
+        $isLocalSqlite = env('LOCAL_CASE_DB_TEST', false) &&
+                        app()->environment('local') &&
+                        str_contains($host, '.sqlite');
+
+        if ($isLocalSqlite) {
             // Configure SQLite connection for local testing
             Config::set("database.connections.{$connectionName}", [
                 'driver' => 'sqlite',
@@ -190,7 +194,7 @@ class CaseDatabaseService
                 'foreign_key_constraints' => true,
             ]);
         } else {
-            // Use MySQL connection config for case databases (production)
+            // Use MySQL connection config for case databases (production via KAS API)
             $mysqlConfig = config('database.connections.mysql');
 
             $password = '';
@@ -224,10 +228,15 @@ class CaseDatabaseService
         // Clear any cached connections
         $this->databaseManager->purge($connectionName);
 
-        Log::info('Database connection configured successfully', [
+        $connectionType = $isLocalSqlite ? 'sqlite' : 'mysql';
+        Log::info('Database connection configured', [
             'connection_name' => $connectionName,
+            'connection_type' => $connectionType,
             'host' => $host,
             'database' => $caseReference->database_name,
+            'user' => $caseReference->database_user,
+            'environment' => app()->environment(),
+            'local_test_enabled' => env('LOCAL_CASE_DB_TEST', false),
         ]);
     }
 
