@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CaseFile;
+use App\Models\CaseReference;
 use App\Services\CaseDatabaseService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -16,7 +17,7 @@ class CaseFileController extends Controller
 
     public function index(): Response
     {
-        $cases = CaseFile::with(['referee', 'databaseConnection'])
+        $cases = CaseReference::with(['createdBy'])
             ->latest()
             ->paginate(15);
 
@@ -45,23 +46,17 @@ class CaseFileController extends Controller
             'urgency_level' => 'nullable|string',
         ]);
 
-        // Create minimal case file record in landlord database (reference only)
-        $landlordCaseFileData = [
-            'case_number' => $validated['case_number'],
-            'title' => $validated['title'],
-            'status' => 'draft',
-            'initiated_at' => $validated['initiated_at'] ?? now(),
-            'created_by' => auth()->id(),
-        ];
-
-        $tempCaseFile = CaseFile::create($landlordCaseFileData);
-
-        // Create case database
+        // Create case database and reference in one step
         try {
-            $connection = $this->caseDatabaseService->createCaseDatabase($tempCaseFile);
+            $caseReference = $this->caseDatabaseService->createCaseDatabase([
+                'case_number' => $validated['case_number'],
+                'title' => $validated['title'],
+                'initiated_at' => $validated['initiated_at'] ?? now(),
+                'created_by' => auth()->id(),
+            ]);
 
             // Switch to the case database and run migrations
-            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($tempCaseFile);
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
 
             if ($connectionName) {
                 try {

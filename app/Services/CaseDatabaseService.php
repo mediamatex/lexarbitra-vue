@@ -2,8 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\CaseDatabaseConnection;
-use App\Models\CaseFile;
+use App\Models\CaseReference;
 use Exception;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Facades\Config;
@@ -22,26 +21,40 @@ class CaseDatabaseService
         $this->databaseManager = $databaseManager;
     }
 
-    public function createCaseDatabase(CaseFile $caseFile): CaseDatabaseConnection
+    public function createCaseDatabase(array $caseData): CaseReference
     {
         try {
-            // Check if database already exists for this case
-            $existingConnection = CaseDatabaseConnection::where('case_file_id', $caseFile->id)->first();
+            // Check if database already exists for this case number
+            $existingConnection = CaseReference::where('case_number', $caseData['case_number'])->first();
             if ($existingConnection) {
-                throw new Exception("Database already exists for case: {$caseFile->id}");
+                throw new Exception("Database already exists for case: {$caseData['case_number']}");
             }
+
+            // Create temporary case reference to get ID for database creation
+            $tempCaseReference = CaseReference::create([
+                'case_number' => $caseData['case_number'],
+                'title' => $caseData['title'],
+                'status' => 'draft',
+                'initiated_at' => $caseData['initiated_at'] ?? now(),
+                'created_by' => $caseData['created_by'] ?? auth()->id(),
+                'database_name' => 'temp', // Will be updated after KAS API call
+                'database_user' => 'temp',
+                'database_host' => 'temp',
+                'connection_name' => 'temp',
+            ]);
 
             // Create database via KAS API
             $databaseInfo = $this->kasApiService->createCaseDatabase(
-                $caseFile->id,
-                "Database for case: {$caseFile->title}"
+                $tempCaseReference->id,
+                "Database for case: {$tempCaseReference->title}"
             );
 
             if (! $databaseInfo['success']) {
+                $tempCaseReference->delete();
                 throw new Exception('Failed to create database via KAS API');
             }
 
-            // Create database connection record
+            // Update with actual database connection info
             $password = $databaseInfo['database_password'];
 
             // Only encrypt password if not empty (for local SQLite testing, password is empty)
@@ -49,29 +62,30 @@ class CaseDatabaseService
                 $password = encrypt($password);
             }
 
-            $connection = CaseDatabaseConnection::create([
-                'case_file_id' => $caseFile->id,
+            $tempCaseReference->update([
                 'database_name' => $databaseInfo['database_name'],
                 'database_user' => $databaseInfo['database_user'],
                 'database_password' => $password,
                 'database_host' => $databaseInfo['database_host'],
-                'connection_name' => $this->generateConnectionName($caseFile->id),
+                'connection_name' => $this->generateConnectionName($tempCaseReference->id),
                 'is_active' => true,
             ]);
+
+            $connection = $tempCaseReference;
 
             try {
                 // Configure Laravel database connection
                 $this->configureDatabaseConnection($connection);
 
                 Log::info('Case database setup completed successfully', [
-                    'case_file_id' => $caseFile->id,
+                    'case_reference_id' => $connection->id,
                     'database_name' => $databaseInfo['database_name'],
                     'environment' => app()->environment(),
                 ]);
 
             } catch (Exception $e) {
                 Log::error('Database setup failed after successful creation', [
-                    'case_file_id' => $caseFile->id,
+                    'case_reference_id' => $connection->id,
                     'database_name' => $databaseInfo['database_name'],
                     'environment' => app()->environment(),
                     'setup_error' => $e->getMessage(),
@@ -79,7 +93,7 @@ class CaseDatabaseService
             }
 
             Log::info('Case database created successfully', [
-                'case_file_id' => $caseFile->id,
+                'case_reference_id' => $connection->id,
                 'database_name' => $databaseInfo['database_name'],
                 'connection_name' => $connection->connection_name,
             ]);
@@ -88,7 +102,7 @@ class CaseDatabaseService
 
         } catch (Exception $e) {
             Log::error('Failed to create case database', [
-                'case_file_id' => $caseFile->id,
+                'case_reference_id' => isset($tempCaseReference) ? $tempCaseReference->id : 'unknown',
                 'error' => $e->getMessage(),
             ]);
 
@@ -101,28 +115,21 @@ class CaseDatabaseService
         }
     }
 
-    public function deleteCaseDatabase(CaseFile $caseFile): bool
+    public function deleteCaseDatabase(CaseReference $caseReference): bool
     {
         try {
-            $connection = CaseDatabaseConnection::where('case_file_id', $caseFile->id)->first();
-            if (! $connection) {
-                Log::warning('No database connection found for case', ['case_file_id' => $caseFile->id]);
-
-                return true; // Consider it successful if no database exists
-            }
-
             // Remove Laravel database connection
-            $this->removeDatabaseConnection($connection->connection_name);
+            $this->removeDatabaseConnection($caseReference->connection_name);
 
             // Delete database via KAS API
-            $deleted = $this->kasApiService->deleteCaseDatabase($connection->database_name);
+            $deleted = $this->kasApiService->deleteCaseDatabase($caseReference->database_name);
 
             // Remove connection record
-            $connection->delete();
+            $caseReference->delete();
 
             Log::info('Case database deleted', [
-                'case_file_id' => $caseFile->id,
-                'database_name' => $connection->database_name,
+                'case_reference_id' => $caseReference->id,
+                'database_name' => $caseReference->database_name,
                 'api_success' => $deleted,
             ]);
 
@@ -130,7 +137,7 @@ class CaseDatabaseService
 
         } catch (Exception $e) {
             Log::error('Failed to delete case database', [
-                'case_file_id' => $caseFile->id,
+                'case_reference_id' => $caseReference->id,
                 'error' => $e->getMessage(),
             ]);
 
@@ -138,31 +145,29 @@ class CaseDatabaseService
         }
     }
 
-    public function getCaseDatabaseConnection(CaseFile $caseFile): ?CaseDatabaseConnection
+    public function getCaseReference(string $caseReferenceId): ?CaseReference
     {
-        return CaseDatabaseConnection::where('case_file_id', $caseFile->id)
+        return CaseReference::where('id', $caseReferenceId)
             ->where('is_active', true)
             ->first();
     }
 
-    public function switchToCaseDatabase(CaseFile $caseFile): ?string
+    public function switchToCaseDatabase(CaseReference $caseReference): ?string
     {
-        $connection = $this->getCaseDatabaseConnection($caseFile);
-
-        if (! $connection) {
+        if (! $caseReference) {
             return null;
         }
 
         // Ensure the connection is configured
-        $this->configureDatabaseConnection($connection);
+        $this->configureDatabaseConnection($caseReference);
 
-        return $connection->connection_name;
+        return $caseReference->connection_name;
     }
 
-    private function configureDatabaseConnection(CaseDatabaseConnection $connection): void
+    private function configureDatabaseConnection(CaseReference $caseReference): void
     {
-        $connectionName = $connection->connection_name;
-        $host = $connection->database_host;
+        $connectionName = $caseReference->connection_name;
+        $host = $caseReference->database_host;
 
         // Check if this is a local SQLite database (indicated by file path in host)
         if (env('LOCAL_CASE_DB_TEST', false) && str_contains($host, '.sqlite')) {
@@ -178,12 +183,12 @@ class CaseDatabaseService
             $mysqlConfig = config('database.connections.mysql');
 
             $password = '';
-            if ($connection->database_password) {
+            if ($caseReference->database_password) {
                 try {
-                    $password = decrypt($connection->database_password);
+                    $password = decrypt($caseReference->database_password);
                 } catch (\Exception $e) {
                     // If decryption fails, assume it's already plain text (for local testing)
-                    $password = $connection->database_password;
+                    $password = $caseReference->database_password;
                 }
             }
 
@@ -191,8 +196,8 @@ class CaseDatabaseService
                 'driver' => 'mysql',
                 'host' => $host,
                 'port' => $mysqlConfig['port'] ?? 3306,
-                'database' => $connection->database_name,
-                'username' => $connection->database_user,
+                'database' => $caseReference->database_name,
+                'username' => $caseReference->database_user,
                 'password' => $password,
                 'unix_socket' => $mysqlConfig['unix_socket'] ?? '',
                 'charset' => $mysqlConfig['charset'] ?? 'utf8mb4',
@@ -211,7 +216,7 @@ class CaseDatabaseService
         Log::info('Database connection configured successfully', [
             'connection_name' => $connectionName,
             'host' => $host,
-            'database' => $connection->database_name,
+            'database' => $caseReference->database_name,
         ]);
     }
 
@@ -229,27 +234,18 @@ class CaseDatabaseService
         return 'case_'.str_replace('-', '_', $caseFileId);
     }
 
-    public function testCaseDatabase(CaseFile $caseFile): array
+    public function testCaseDatabase(CaseReference $caseReference): array
     {
-        $connection = $this->getCaseDatabaseConnection($caseFile);
-
-        if (! $connection) {
-            return [
-                'success' => false,
-                'error' => 'No database connection found for case',
-            ];
-        }
-
         try {
-            $this->configureDatabaseConnection($connection);
+            $this->configureDatabaseConnection($caseReference);
 
             // Test database connection
-            DB::connection($connection->connection_name)->getPdo();
+            DB::connection($caseReference->connection_name)->getPdo();
 
             return [
                 'success' => true,
-                'connection_name' => $connection->connection_name,
-                'database_name' => $connection->database_name,
+                'connection_name' => $caseReference->connection_name,
+                'database_name' => $caseReference->database_name,
             ];
 
         } catch (Exception $e) {
