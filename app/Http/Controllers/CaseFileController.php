@@ -122,12 +122,19 @@ class CaseFileController extends Controller
                         'output' => $migrateOutput,
                     ]);
 
-                    // Check what tables exist after migration
-                    $tables = \DB::connection($connectionName)->select('SHOW TABLES');
-                    logger()->info('Tables in tenant database after migration', [
-                        'tables' => $tables,
-                        'connection_name' => $connectionName,
-                    ]);
+                    // Check what tables exist after migration using database-agnostic method
+                    try {
+                        $tableNames = \Schema::connection($connectionName)->getTableListing();
+                        logger()->info('Tables in tenant database after migration', [
+                            'tables' => $tableNames,
+                            'connection_name' => $connectionName,
+                        ]);
+                    } catch (\Exception $e) {
+                        logger()->warning('Could not list tables after migration', [
+                            'connection_name' => $connectionName,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
 
                     // Check if case_files table exists in tenant database
                     $tablesExist = \Schema::connection($connectionName)->hasTable('case_files');
