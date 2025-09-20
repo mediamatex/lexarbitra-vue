@@ -46,17 +46,32 @@ jobs:
           script: |
             cd ${{ secrets.PROJECT_PATH }}
 
-            # Backup current version
-            cp -r . ../backup-$(date +%Y%m%d_%H%M%S) || true
+            # Initialize git repository if it doesn't exist
+            if [ ! -d ".git" ]; then
+              echo "Cloning repository for the first time..."
+              cd ..
+              rm -rf $(basename ${{ secrets.PROJECT_PATH }}) || true
+              git clone https://github.com/mediamatex/lexarbitra-vue.git $(basename ${{ secrets.PROJECT_PATH }})
+              cd ${{ secrets.PROJECT_PATH }}
+            else
+              # Backup current version
+              cp -r . ../backup-$(date +%Y%m%d_%H%M%S) || true
 
-            # Pull latest changes
-            git fetch origin
-            git reset --hard origin/main
+              # Pull latest changes
+              git fetch origin
+              git reset --hard origin/main
+            fi
 
             # Install dependencies
             composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
-            npm ci
-            npm run build
+
+            # Install node dependencies (skip if npm not available)
+            if command -v npm > /dev/null; then
+              npm ci
+              npm run build
+            else
+              echo "npm not found, using pre-built assets from GitHub Actions"
+            fi
 
             # Run migrations on MASTER database only
             # Case databases are created dynamically via KAS API when needed
@@ -71,11 +86,11 @@ jobs:
             php artisan view:cache
             php artisan event:cache
 
-            # Set proper permissions
-            chown -R www-data:www-data storage bootstrap/cache
-            chmod -R 775 storage bootstrap/cache
+            # Set proper permissions (skip if commands not available)
+            chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || echo "chown not available, skipping..."
+            chmod -R 775 storage bootstrap/cache 2>/dev/null || echo "chmod failed, skipping..."
 
-            # Restart services (adjust as needed for your server)
-            sudo supervisorctl restart all || true
-            sudo systemctl reload php8.4-fpm || true
-            sudo systemctl reload nginx || true
+            # Restart services (skip if not available)
+            sudo supervisorctl restart all 2>/dev/null || echo "supervisorctl not available, skipping..."
+            sudo systemctl reload php8.4-fpm 2>/dev/null || echo "systemctl not available, skipping..."
+            sudo systemctl reload nginx 2>/dev/null || echo "nginx restart not available, skipping..."
