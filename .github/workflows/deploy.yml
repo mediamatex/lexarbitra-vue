@@ -307,9 +307,37 @@ jobs:
             echo "🚀 Running database migrations..."
             php artisan migrate --force --no-interaction
 
-            # Seed the admin user
-            echo "🌱 Seeding admin user..."
-            php artisan db:seed --class=AdminUserSeeder --no-interaction
+            # Seed the database (includes admin user)
+            echo "🌱 Seeding database..."
+            php artisan db:seed --no-interaction || echo "Seeding failed, attempting to create admin user manually"
+
+            # Manually create admin user if seeding failed
+            echo "Checking admin user creation..."
+            php artisan tinker --execute="
+            try {
+                \$adminEmail = env('ADMIN_EMAIL', 'admin@lexarbitra.com');
+                \$existingUser = \App\Models\User::where('email', \$adminEmail)->first();
+
+                if (\$existingUser) {
+                    echo 'Admin user already exists: ' . \$existingUser->email . PHP_EOL;
+                } else {
+                    \$admin = \App\Models\User::create([
+                        'name' => env('ADMIN_NAME', 'Super Admin'),
+                        'email' => \$adminEmail,
+                        'password' => \Illuminate\Support\Facades\Hash::make(env('ADMIN_PASSWORD', 'admin123!')),
+                        'email_verified_at' => now(),
+                        'is_super_admin' => true,
+                        'is_active' => true,
+                        'title' => 'Administrator',
+                    ]);
+                    echo 'Admin user created manually: ' . \$admin->email . PHP_EOL;
+                }
+
+                echo 'Total users in database: ' . \App\Models\User::count() . PHP_EOL;
+            } catch (Exception \$e) {
+                echo 'Error creating admin user: ' . \$e->getMessage() . PHP_EOL;
+            }
+            "
 
             # Test KAS API connection
             php artisan tinker --execute="app(\App\Services\KasApiService::class)->testConnection();" || echo "KAS API connection test failed - check credentials"
