@@ -92,7 +92,7 @@ class CaseFileController extends Controller
                     $migrateResult = \Artisan::call('migrate', [
                         '--database' => $connectionName,
                         '--force' => true,
-                        '--path' => 'database/migrations'
+                        '--path' => 'database/migrations/tenant'
                     ]);
 
                     $migrateOutput = \Artisan::output();
