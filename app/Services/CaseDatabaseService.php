@@ -32,12 +32,21 @@ class CaseDatabaseService
                 'connection_name' => 'temp',
             ]);
 
-            // Use local database service for development
-            $localService = new LocalCaseDatabaseService;
-            $databaseInfo = $localService->createLocalCaseDatabase(
-                $caseReference->id,
-                "Database for case: {$caseReference->id}"
-            );
+            // Use appropriate database service based on environment
+            if (env('LOCAL_CASE_DB_TEST', false) && app()->environment('local')) {
+                // Use local SQLite for development/testing
+                $localService = new LocalCaseDatabaseService;
+                $databaseInfo = $localService->createLocalCaseDatabase(
+                    $caseReference->id,
+                    "Database for case: {$caseReference->id}"
+                );
+            } else {
+                // Use KAS API for production MySQL databases
+                $databaseInfo = $this->kasApiService->createCaseDatabase(
+                    "case_db_{$caseReference->id}",
+                    "Database for case: {$caseReference->id}"
+                );
+            }
 
             if (! $databaseInfo['success']) {
                 $caseReference->delete();
@@ -98,7 +107,12 @@ class CaseDatabaseService
 
             // Cleanup: try to delete the database if it was created
             if (isset($databaseInfo['database_name'])) {
-                $this->kasApiService->deleteCaseDatabase($databaseInfo['database_name']);
+                if (env('LOCAL_CASE_DB_TEST', false) && app()->environment('local')) {
+                    $localService = new LocalCaseDatabaseService;
+                    $localService->deleteLocalCaseDatabase($databaseInfo['database_name']);
+                } else {
+                    $this->kasApiService->deleteCaseDatabase($databaseInfo['database_name']);
+                }
             }
 
             throw $e;
@@ -111,8 +125,15 @@ class CaseDatabaseService
             // Remove Laravel database connection
             $this->removeDatabaseConnection($caseReference->connection_name);
 
-            // Delete database via KAS API
-            $deleted = $this->kasApiService->deleteCaseDatabase($caseReference->database_name);
+            // Delete database using appropriate service based on environment
+            if (env('LOCAL_CASE_DB_TEST', false) && app()->environment('local')) {
+                // Use local SQLite service for development/testing
+                $localService = new LocalCaseDatabaseService;
+                $deleted = $localService->deleteLocalCaseDatabase($caseReference->database_name);
+            } else {
+                // Use KAS API for production MySQL databases
+                $deleted = $this->kasApiService->deleteCaseDatabase($caseReference->database_name);
+            }
 
             // Remove connection record
             $caseReference->delete();
