@@ -69,25 +69,42 @@ class CaseFileController extends Controller
 
             if ($connectionName) {
                 try {
+                    // Test tenant database connection first
+                    logger()->info('Testing tenant database connection', [
+                        'connection_name' => $connectionName,
+                        'case_id' => $tempCaseFile->id
+                    ]);
+
+                    $testConnection = \DB::connection($connectionName)->getPdo();
+                    logger()->info('Tenant database connection test successful', [
+                        'connection_name' => $connectionName,
+                        'driver' => $testConnection->getAttribute(\PDO::ATTR_DRIVER_NAME)
+                    ]);
+
                     // Run migrations on the case database
                     logger()->info('Running migrations on tenant database', [
-                        'connection_name' => $connectionName,
-                        'case_id' => $caseFile->id
+                        'connection_name' => $connectionName
                     ]);
+
+                    // Force clear any cached connections first
+                    \DB::purge($connectionName);
 
                     $migrateResult = \Artisan::call('migrate', [
                         '--database' => $connectionName,
                         '--force' => true,
+                        '--path' => 'database/migrations'
                     ]);
 
+                    $migrateOutput = \Artisan::output();
                     logger()->info('Migration result', [
                         'result' => $migrateResult,
-                        'output' => \Artisan::output()
+                        'output' => $migrateOutput
                     ]);
 
-                    // Test tenant database connection
-                    $testConnection = \DB::connection($connectionName)->getPdo();
-                    logger()->info('Tenant database connection test successful', [
+                    // Check what tables exist after migration
+                    $tables = \DB::connection($connectionName)->select('SHOW TABLES');
+                    logger()->info('Tables in tenant database after migration', [
+                        'tables' => $tables,
                         'connection_name' => $connectionName
                     ]);
 
@@ -99,10 +116,18 @@ class CaseFileController extends Controller
                     ]);
 
                     if (!$tablesExist) {
-                        throw new \Exception('case_files table does not exist in tenant database after migration');
+                        throw new \Exception('case_files table does not exist in tenant database after migration. Migration output: ' . $migrateOutput);
                     }
 
                     // Now create the REAL case file directly in the tenant database
+                    logger()->info('Creating case file for tenant database', [
+                        'connection_name' => $connectionName,
+                        'validated_data' => $validated
+                    ]);
+
+                    // Force use of tenant connection by explicitly setting it
+                    \DB::setDefaultConnection($connectionName);
+
                     $realCaseFile = new CaseFile();
                     $realCaseFile->setConnection($connectionName);
                     $realCaseFile->fill($validated);
@@ -110,14 +135,19 @@ class CaseFileController extends Controller
                     // Only set created_by if the column exists in tenant database
                     if (\Schema::connection($connectionName)->hasColumn('case_files', 'created_by')) {
                         $realCaseFile->created_by = auth()->id();
+                        logger()->info('Set created_by for tenant case', ['created_by' => auth()->id()]);
                     }
 
                     logger()->info('Saving case data to tenant database', [
                         'connection_name' => $connectionName,
-                        'case_data' => $realCaseFile->toArray()
+                        'case_data' => $realCaseFile->toArray(),
+                        'current_connection' => $realCaseFile->getConnectionName()
                     ]);
 
                     $realCaseFile->save();
+
+                    // Reset default connection back to main
+                    \DB::setDefaultConnection('mysql');
 
                     logger()->info('Case data saved to tenant database', [
                         'tenant_case_id' => $realCaseFile->id,
