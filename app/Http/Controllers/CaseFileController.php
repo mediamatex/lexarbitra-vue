@@ -16,12 +16,48 @@ class CaseFileController extends Controller
 
     public function index(): Response
     {
-        $cases = CaseReference::with(['createdBy'])
-            ->latest()
-            ->paginate(15);
+        $caseReferences = CaseReference::latest()->paginate(15);
+
+        // Load case data from tenant databases
+        $cases = [];
+        foreach ($caseReferences as $reference) {
+            if ($reference->tenant_case_id) {
+                $connectionName = $this->caseDatabaseService->switchToCaseDatabase($reference);
+
+                if ($connectionName) {
+                    try {
+                        $tenantCase = \DB::connection($connectionName)
+                            ->table('case_files')
+                            ->where('id', $reference->tenant_case_id)
+                            ->first();
+
+                        if ($tenantCase) {
+                            // Merge tenant data with reference info
+                            $case = (object) array_merge((array) $tenantCase, [
+                                'reference_id' => $reference->id,
+                                'database_name' => $reference->database_name,
+                                'connection_name' => $reference->connection_name,
+                            ]);
+                            $cases[] = $case;
+                        }
+                    } catch (\Exception $e) {
+                        logger()->warning('Failed to load tenant case data for index', [
+                            'reference_id' => $reference->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+        }
 
         return Inertia::render('CaseFiles/Index', [
-            'cases' => $cases,
+            'cases' => [
+                'data' => $cases,
+                'current_page' => $caseReferences->currentPage(),
+                'last_page' => $caseReferences->lastPage(),
+                'per_page' => $caseReferences->perPage(),
+                'total' => $caseReferences->total(),
+            ],
         ]);
     }
 
@@ -33,7 +69,7 @@ class CaseFileController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'case_number' => 'required|string|unique:case_references',
+            'case_number' => 'required|string',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'dispute_value' => 'nullable|numeric|min:0',
@@ -47,12 +83,7 @@ class CaseFileController extends Controller
 
         // Create case database and reference in one step
         try {
-            $caseReference = $this->caseDatabaseService->createCaseDatabase([
-                'case_number' => $validated['case_number'],
-                'title' => $validated['title'],
-                'initiated_at' => $validated['initiated_at'] ?? now(),
-                'created_by' => auth()->id(),
-            ]);
+            $caseReference = $this->caseDatabaseService->createCaseDatabase([]);
 
             // Switch to the case database and run migrations
             $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
@@ -220,20 +251,26 @@ class CaseFileController extends Controller
 
     public function show(CaseReference $caseReference): Response
     {
-        // If we have a tenant database, get the full case data from there
-        $tenantCaseData = null;
+        $caseFile = null;
+
         if ($caseReference->tenant_case_id) {
             $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
 
             if ($connectionName) {
                 try {
-                    // Use raw query to get tenant case data since we don't have Eloquent models for tenant DB
                     $tenantCase = \DB::connection($connectionName)
                         ->table('case_files')
                         ->where('id', $caseReference->tenant_case_id)
                         ->first();
 
-                    $tenantCaseData = $tenantCase;
+                    if ($tenantCase) {
+                        // Merge tenant data with reference info
+                        $caseFile = (object) array_merge((array) $tenantCase, [
+                            'reference_id' => $caseReference->id,
+                            'database_name' => $caseReference->database_name,
+                            'connection_name' => $caseReference->connection_name,
+                        ]);
+                    }
                 } catch (\Exception $e) {
                     logger()->error('Failed to load tenant case data', [
                         'case_reference_id' => $caseReference->id,
@@ -244,42 +281,36 @@ class CaseFileController extends Controller
             }
         }
 
-        // Use tenant data if available, otherwise fall back to reference data
-        $displayCase = $tenantCaseData ?? $caseReference;
+        if (! $caseFile) {
+            abort(404, 'Case file not found or tenant database unavailable');
+        }
 
         return Inertia::render('CaseFiles/Show', [
-            'caseFile' => $displayCase,
-            'hasTenantDatabase' => $tenantCaseData !== null,
+            'caseFile' => $caseFile,
             'caseReference' => $caseReference,
         ]);
     }
 
     public function edit(CaseReference $case): Response
     {
-        // If we have a tenant database, get the full case data from there
-        $caseData = $case; // Default to landlord data
+        $caseFile = null;
 
         if ($case->tenant_case_id) {
             $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
 
             if ($connectionName) {
                 try {
-                    // Get the actual case data from tenant database
                     $tenantCase = \DB::connection($connectionName)
                         ->table('case_files')
                         ->where('id', $case->tenant_case_id)
                         ->first();
 
                     if ($tenantCase) {
-                        // Convert stdClass to array and merge with landlord reference data
-                        $tenantCaseArray = (array) $tenantCase;
-
-                        // Use tenant data but keep landlord reference info
-                        $caseData = (object) array_merge($tenantCaseArray, [
-                            'id' => $case->id, // Keep landlord ID for form submission
+                        // Merge tenant data with reference info for form submission
+                        $caseFile = (object) array_merge((array) $tenantCase, [
+                            'reference_id' => $case->id, // For form submission
                             'database_name' => $case->database_name,
                             'connection_name' => $case->connection_name,
-                            'tenant_case_id' => $case->tenant_case_id,
                         ]);
                     }
                 } catch (\Exception $e) {
@@ -292,56 +323,73 @@ class CaseFileController extends Controller
             }
         }
 
+        if (! $caseFile) {
+            abort(404, 'Case file not found or tenant database unavailable');
+        }
+
         return Inertia::render('CaseFiles/Edit', [
-            'caseFile' => $caseData,
-            'caseReference' => $case, // Original reference for form actions
+            'caseFile' => $caseFile,
+            'caseReference' => $case,
         ]);
     }
 
     public function update(Request $request, CaseReference $case)
     {
         $validated = $request->validate([
-            'case_number' => 'required|string|unique:case_references,case_number,'.$case->id,
+            'case_number' => 'required|string',
             'title' => 'required|string|max:255',
             'status' => 'nullable|string',
         ]);
 
-        // Update the landlord case reference first
-        $case->update($validated);
-
-        // Validate data consistency before sync
-        $consistencyIssues = $this->validateDataConsistency($case);
-        if (! empty($consistencyIssues)) {
-            logger()->warning('Data consistency issues found before sync', [
-                'case_reference_id' => $case->id,
-                'issues' => $consistencyIssues,
-            ]);
+        if (! $case->tenant_case_id) {
+            abort(404, 'Case file not found or tenant database unavailable');
         }
 
-        // Sync to tenant database if it exists
-        $tenantSyncSuccess = $this->syncCaseToTenant($case, $validated);
+        $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
 
-        if (! $tenantSyncSuccess) {
-            logger()->warning('Case updated in landlord DB but tenant sync failed', [
+        if (! $connectionName) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['database' => 'Fehler beim Verbinden zur Falldatenbank']);
+        }
+
+        try {
+            // Update only in tenant database
+            $updated = \DB::connection($connectionName)
+                ->table('case_files')
+                ->where('id', $case->tenant_case_id)
+                ->update([
+                    'case_number' => $validated['case_number'],
+                    'title' => $validated['title'],
+                    'status' => $validated['status'],
+                    'updated_at' => now(),
+                ]);
+
+            if (! $updated) {
+                throw new \Exception('No case record was updated in tenant database');
+            }
+
+            logger()->info('Case updated successfully in tenant database', [
                 'case_reference_id' => $case->id,
                 'tenant_case_id' => $case->tenant_case_id,
+                'connection' => $connectionName,
             ]);
 
             return redirect()->route('cases.show', $case)
-                ->with('warning', 'Fall wurde aktualisiert, aber die Synchronisation zur Falldatenbank ist fehlgeschlagen.');
-        }
+                ->with('success', 'Falldatei erfolgreich aktualisiert.');
 
-        // Validate consistency after sync
-        $postSyncIssues = $this->validateDataConsistency($case);
-        if (! empty($postSyncIssues)) {
-            logger()->error('Data consistency issues persist after sync', [
+        } catch (\Exception $e) {
+            logger()->error('Failed to update case in tenant database', [
                 'case_reference_id' => $case->id,
-                'issues' => $postSyncIssues,
+                'tenant_case_id' => $case->tenant_case_id,
+                'connection' => $connectionName,
+                'error' => $e->getMessage(),
             ]);
-        }
 
-        return redirect()->route('cases.show', $case)
-            ->with('success', 'Falldatei erfolgreich aktualisiert.');
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['database' => 'Fehler beim Aktualisieren der Falldatei: '.$e->getMessage()]);
+        }
     }
 
     public function destroy(CaseReference $caseReference)
@@ -365,165 +413,5 @@ class CaseFileController extends Controller
         $result = $this->caseDatabaseService->testCaseDatabase($caseReference);
 
         return response()->json($result);
-    }
-
-    /**
-     * Sync case data from landlord to tenant database
-     */
-    private function syncCaseToTenant($case, array $data): bool
-    {
-        if (! $case->tenant_case_id) {
-            logger()->info('No tenant database to sync to', [
-                'case_reference_id' => $case->id,
-            ]);
-
-            return true; // No tenant DB to sync to
-        }
-
-        $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
-
-        if (! $connectionName) {
-            logger()->error('Failed to establish tenant database connection', [
-                'case_reference_id' => $case->id,
-                'tenant_case_id' => $case->tenant_case_id,
-            ]);
-
-            return false;
-        }
-
-        try {
-            // First verify tenant case exists
-            $existingCase = \DB::connection($connectionName)
-                ->table('case_files')
-                ->where('id', $case->tenant_case_id)
-                ->first();
-
-            if (! $existingCase) {
-                logger()->error('Tenant case not found in database', [
-                    'case_reference_id' => $case->id,
-                    'tenant_case_id' => $case->tenant_case_id,
-                    'connection' => $connectionName,
-                ]);
-
-                return false;
-            }
-
-            // Prepare update data with all sync fields
-            $updateData = [
-                'case_number' => $data['case_number'],
-                'title' => $data['title'],
-                'status' => $data['status'] ?? $case->status,
-                'updated_at' => now(),
-            ];
-
-            // Update the tenant case data
-            $updated = \DB::connection($connectionName)
-                ->table('case_files')
-                ->where('id', $case->tenant_case_id)
-                ->update($updateData);
-
-            if ($updated) {
-                logger()->info('Case synced to tenant database successfully', [
-                    'case_reference_id' => $case->id,
-                    'tenant_case_id' => $case->tenant_case_id,
-                    'connection' => $connectionName,
-                    'synced_fields' => array_keys($updateData),
-                ]);
-
-                // Verify the sync worked by reading back the data
-                $verifyCase = \DB::connection($connectionName)
-                    ->table('case_files')
-                    ->where('id', $case->tenant_case_id)
-                    ->first();
-
-                if ($verifyCase->case_number === $data['case_number'] &&
-                    $verifyCase->title === $data['title']) {
-                    logger()->info('Sync verification successful', [
-                        'case_reference_id' => $case->id,
-                        'tenant_case_id' => $case->tenant_case_id,
-                    ]);
-
-                    return true;
-                } else {
-                    logger()->error('Sync verification failed - data mismatch', [
-                        'case_reference_id' => $case->id,
-                        'tenant_case_id' => $case->tenant_case_id,
-                        'expected' => $updateData,
-                        'actual' => (array) $verifyCase,
-                    ]);
-
-                    return false;
-                }
-            } else {
-                logger()->warning('Tenant case update returned 0 affected rows', [
-                    'case_reference_id' => $case->id,
-                    'tenant_case_id' => $case->tenant_case_id,
-                    'connection' => $connectionName,
-                ]);
-
-                return false;
-            }
-
-        } catch (\Exception $e) {
-            logger()->error('Failed to sync case to tenant database', [
-                'case_reference_id' => $case->id,
-                'tenant_case_id' => $case->tenant_case_id,
-                'connection' => $connectionName,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return false;
-        }
-    }
-
-    /**
-     * Validate data consistency between landlord and tenant databases
-     */
-    private function validateDataConsistency($case): array
-    {
-        $issues = [];
-
-        if (! $case->tenant_case_id) {
-            return $issues; // No tenant to validate against
-        }
-
-        $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
-        if (! $connectionName) {
-            $issues[] = 'Cannot connect to tenant database';
-
-            return $issues;
-        }
-
-        try {
-            $tenantCase = \DB::connection($connectionName)
-                ->table('case_files')
-                ->where('id', $case->tenant_case_id)
-                ->first();
-
-            if (! $tenantCase) {
-                $issues[] = 'Tenant case not found';
-
-                return $issues;
-            }
-
-            // Check critical fields are in sync
-            if ($case->case_number !== $tenantCase->case_number) {
-                $issues[] = "Case number mismatch: landlord='{$case->case_number}', tenant='{$tenantCase->case_number}'";
-            }
-
-            if ($case->title !== $tenantCase->title) {
-                $issues[] = "Title mismatch: landlord='{$case->title}', tenant='{$tenantCase->title}'";
-            }
-
-            if ($case->status !== $tenantCase->status) {
-                $issues[] = "Status mismatch: landlord='{$case->status}', tenant='{$tenantCase->status}'";
-            }
-
-        } catch (\Exception $e) {
-            $issues[] = 'Error validating tenant data: '.$e->getMessage();
-        }
-
-        return $issues;
     }
 }
