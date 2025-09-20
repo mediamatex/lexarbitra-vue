@@ -1,96 +1,299 @@
-name: deploy
+name: Deploy to all-inkl.com
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
 
 jobs:
   deploy:
+    name: Deploy to Production
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    environment:
+      name: production
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: 8.4
-          tools: composer:v2
-          extensions: pdo, sqlite, pdo_sqlite, bcmath, soap, zip, exif, gd, mbstring
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, pdo_mysql
+          coverage: none
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install Node Dependencies
+      - name: Install Composer dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader --no-dev
+
+      - name: Install NPM dependencies
         run: npm ci
 
-      - name: Install PHP Dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
-
-      - name: Build Assets
+      - name: Build assets for production
         run: npm run build
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.PORT }}
-          script: |
+      - name: Create deployment package
+        run: |
+          mkdir -p deployment-package
+
+          # Copy application files
+          rsync -av --exclude-from=deployment-excludes.txt . deployment-package/ || rsync -av --exclude='node_modules' --exclude='.git' --exclude='.github' --exclude='tests' --exclude='storage/logs' . deployment-package/
+
+          # Create production .env file
+          cat > deployment-package/.env << EOF
+          APP_NAME="${{ secrets.APP_NAME }}"
+          APP_ENV=production
+          APP_KEY="${{ secrets.APP_KEY }}"
+          APP_DEBUG=false
+          APP_URL="${{ secrets.APP_URL }}"
+
+          APP_LOCALE=de
+          APP_FALLBACK_LOCALE=de
+          APP_FAKER_LOCALE=de_DE
+
+          APP_MAINTENANCE_DRIVER=file
+          PHP_CLI_SERVER_WORKERS=4
+          BCRYPT_ROUNDS=12
+
+          LOG_CHANNEL=stack
+          LOG_STACK=single
+          LOG_DEPRECATIONS_CHANNEL=null
+          LOG_LEVEL=error
+
+          DB_CONNECTION=mysql
+          DB_HOST="${{ secrets.DB_HOST }}"
+          DB_PORT="${{ secrets.DB_PORT }}"
+          DB_DATABASE="${{ secrets.DB_DATABASE }}"
+          DB_USERNAME="${{ secrets.DB_USERNAME }}"
+          DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+
+          SESSION_DRIVER=file
+          SESSION_LIFETIME=120
+          SESSION_ENCRYPT=false
+          SESSION_PATH=/
+          SESSION_DOMAIN="${{ secrets.SESSION_DOMAIN }}"
+
+          BROADCAST_CONNECTION=log
+          FILESYSTEM_DISK=local
+          QUEUE_CONNECTION=database
+          CACHE_STORE=database
+
+          MAIL_MAILER=smtp
+          MAIL_HOST="${{ secrets.MAIL_HOST }}"
+          MAIL_PORT="${{ secrets.MAIL_PORT }}"
+          MAIL_USERNAME="${{ secrets.MAIL_USERNAME }}"
+          MAIL_PASSWORD="${{ secrets.MAIL_PASSWORD }}"
+          MAIL_ENCRYPTION=tls
+          MAIL_FROM_ADDRESS="${{ secrets.MAIL_FROM_ADDRESS }}"
+          MAIL_FROM_NAME="${{ secrets.APP_NAME }}"
+
+          VITE_APP_NAME="${{ secrets.APP_NAME }}"
+
+          # Admin User Configuration
+          ADMIN_NAME="Super Admin"
+          ADMIN_EMAIL="admin@lexarbitra.com"
+          ADMIN_PASSWORD="admin123!"
+          ADMIN_TITLE="Administrator"
+          ADMIN_LAW_FIRM=""
+          ADMIN_PHONE=""
+          ADMIN_ADDRESS=""
+          ADMIN_BAR_NUMBER=""
+
+          # KAS API Configuration for database creation
+          KAS_USER="${{ secrets.KAS_USER }}"
+          KAS_PASSWORD="${{ secrets.KAS_PASSWORD }}"
+          KAS_API_URL=https://kasapi.kasserver.com/soap/
+          KAS_WSDL_URL=https://kasapi.kasserver.com/soap/api.wsdl
+          EOF
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+          # Test SSH connection
+          ssh -o BatchMode=yes -o ConnectTimeout=10 ${{ secrets.USERNAME }}@${{ secrets.HOST }} "echo 'SSH connection successful'"
+
+      - name: Create backup on server
+        run: |
+          ssh ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'EOF'
             cd ${{ secrets.PROJECT_PATH }}
 
-            # Initialize git repository if it doesn't exist
-            if [ ! -d ".git" ]; then
-              echo "Cloning repository for the first time..."
-              cd ..
-              rm -rf $(basename ${{ secrets.PROJECT_PATH }}) || true
-              git clone https://github.com/mediamatex/lexarbitra-vue.git $(basename ${{ secrets.PROJECT_PATH }})
-              cd ${{ secrets.PROJECT_PATH }}
-            else
-              # Backup current version
-              cp -r . ../backup-$(date +%Y%m%d_%H%M%S) || true
+            # Create backup directory
+            mkdir -p backups
 
-              # Pull latest changes
-              git fetch origin
-              git reset --hard origin/main
+            # Create timestamped backup if app exists
+            if [[ -d "app" ]]; then
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              echo "Creating backup: backups/backup_${TIMESTAMP}.tar.gz"
+              tar -czf backups/backup_${TIMESTAMP}.tar.gz \
+                app bootstrap config database resources routes storage vendor .env \
+                composer.json composer.lock artisan public 2>/dev/null || true
+
+              # Keep only last 5 backups
+              cd backups
+              ls -t backup_*.tar.gz | tail -n +6 | xargs rm -f -- 2>/dev/null || true
+            fi
+          EOF
+
+      - name: Deploy application
+        run: |
+          # Upload Laravel application files to a subdirectory
+          rsync -avz --delete-after \
+            --exclude="storage/app/public/documents" \
+            --exclude="storage/logs" \
+            --exclude="storage/framework/cache" \
+            --exclude="storage/framework/sessions" \
+            --exclude="storage/framework/views" \
+            --exclude="public/*" \
+            deployment-package/ ${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.PROJECT_PATH }}/laravel/
+
+          # Upload public folder contents to domain root
+          rsync -avz \
+            deployment-package/public/ ${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.PROJECT_PATH }}/
+
+          # Also copy build assets to Laravel's expected location
+          rsync -avz \
+            deployment-package/public/build/ ${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.PROJECT_PATH }}/laravel/public/build/ 2>/dev/null || echo "No build directory found"
+
+      - name: Configure application on server
+        run: |
+          ssh ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'EOF'
+            # Configure Laravel application (now in laravel/ subdirectory)
+            cd ${{ secrets.PROJECT_PATH }}/laravel
+
+            # Set proper permissions for Laravel files
+            chmod -R 755 storage bootstrap/cache
+
+            # Create necessary directories
+            mkdir -p storage/logs
+            mkdir -p storage/framework/{cache,sessions,views}
+            mkdir -p storage/app/public/documents
+            mkdir -p public/build
+
+            # Create basic Vite manifest if missing
+            if [[ ! -f public/build/manifest.json ]]; then
+              echo '{}' > public/build/manifest.json
+              echo "Created empty Vite manifest for compatibility"
             fi
 
-            # Install dependencies
-            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+            # Clear configuration only (don't clear database cache before migrations)
+            php artisan config:clear --no-interaction || true
+            php artisan route:clear --no-interaction || true
 
-            # Install node dependencies (skip if npm not available)
-            if command -v npm > /dev/null; then
-              npm ci
-              npm run build
-            else
-              echo "npm not found, using pre-built assets from GitHub Actions"
-            fi
+            # Create storage symlink in both locations
+            cd ${{ secrets.PROJECT_PATH }}
+            ln -sf laravel/storage/app/public storage
+
+            # Also create storage link in the Laravel public directory
+            cd ${{ secrets.PROJECT_PATH }}/laravel
+            php artisan storage:link --no-interaction || true
+
+            # Create a proper index.php for all-inkl structure
+            cd ${{ secrets.PROJECT_PATH }}
+            echo "<?php" > index.php
+            echo "use Illuminate\\Contracts\\Http\\Kernel;" >> index.php
+            echo "use Illuminate\\Http\\Request;" >> index.php
+            echo "define('LARAVEL_START', microtime(true));" >> index.php
+            echo "if (file_exists(\$maintenance = __DIR__.'/laravel/storage/framework/maintenance.php')) {" >> index.php
+            echo "    require \$maintenance;" >> index.php
+            echo "}" >> index.php
+            echo "require __DIR__.'/laravel/vendor/autoload.php';" >> index.php
+            echo "\$app = require_once __DIR__.'/laravel/bootstrap/app.php';" >> index.php
+            echo "\$kernel = \$app->make(Kernel::class);" >> index.php
+            echo "\$response = \$kernel->handle(\$request = Request::capture())->send();" >> index.php
+            echo "\$kernel->terminate(\$request, \$response);" >> index.php
+
+            # Debug: Show the created index.php
+            echo "=== Created index.php content ==="
+            head -10 index.php
+
+            # Set proper permissions for web files
+            find . -type f -exec chmod 644 {} \;
+            find . -type d -exec chmod 755 {} \;
+            chmod -R 755 laravel/storage laravel/bootstrap/cache
+          EOF
+
+      - name: Run database migrations
+        run: |
+          ssh ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'EOF'
+            cd ${{ secrets.PROJECT_PATH }}/laravel
+
+            # Test database connection
+            php artisan tinker --execute="DB::connection()->getPdo(); echo 'Database connection successful';"
 
             # Run migrations on MASTER database only
-            # Case databases are created dynamically via KAS API when needed
-            php artisan migrate --force
+            echo "🚀 Running database migrations..."
+            php artisan migrate --force --no-interaction
 
-            # Verify KAS API configuration is working
+            # Test KAS API connection
             php artisan tinker --execute="app(\App\Services\KasApiService::class)->testConnection();" || echo "KAS API connection test failed - check credentials"
 
-            # Clear caches
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
-            php artisan event:cache
+            # Clear and rebuild autoloader
+            composer dump-autoloader --optimize --no-dev
 
-            # Set proper permissions (skip if commands not available)
-            chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || echo "chown not available, skipping..."
-            chmod -R 775 storage bootstrap/cache 2>/dev/null || echo "chmod failed, skipping..."
+            # Cache configuration
+            php artisan config:cache --no-interaction
+            php artisan route:cache --no-interaction
+            php artisan view:cache --no-interaction
 
-            # Restart services (skip if not available)
-            sudo supervisorctl restart all 2>/dev/null || echo "supervisorctl not available, skipping..."
-            sudo systemctl reload php8.4-fpm 2>/dev/null || echo "systemctl not available, skipping..."
-            sudo systemctl reload nginx 2>/dev/null || echo "nginx restart not available, skipping..."
+            echo "✅ Database migrations completed successfully!"
+          EOF
+
+      - name: Test deployment
+        run: |
+          # Test the application is responding
+          curl -f -s -o /dev/null ${{ secrets.APP_URL }} || (echo "Application not responding" && exit 1)
+          echo "✅ Application is responding successfully"
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [[ "${{ job.status }}" == "success" ]]; then
+            echo "🚀 Deployment to production completed successfully!"
+            echo "📍 Application URL: ${{ secrets.APP_URL }}"
+          else
+            echo "❌ Deployment failed. Check the logs above."
+            exit 1
+          fi
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.event.inputs.environment == 'staging' && github.event_name == 'workflow_dispatch'
+
+    environment:
+      name: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "🚧 Staging deployment would run here"
+          echo "This is a placeholder for staging deployment steps"
+          # Similar steps to production but with staging secrets
