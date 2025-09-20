@@ -1,5 +1,5 @@
 name: Deploy to all-inkl.com
-# Deploy with database credentials
+# Deploy with database migration for created_by column
 
 on:
   push:
