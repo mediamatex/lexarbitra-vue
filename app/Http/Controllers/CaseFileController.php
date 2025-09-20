@@ -33,7 +33,7 @@ class CaseFileController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'case_number' => 'required|string|unique:case_files',
+            'case_number' => 'required|string|unique:case_references',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'dispute_value' => 'nullable|numeric|min:0',
