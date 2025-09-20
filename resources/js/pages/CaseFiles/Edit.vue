@@ -79,23 +79,22 @@
                                 <Label for="status" class="text-sm font-medium">
                                     Status
                                 </Label>
-                                <Select v-model="form.status">
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Status auswählen" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="draft">Entwurf</SelectItem>
-                                        <SelectItem value="active">Aktiv</SelectItem>
-                                        <SelectItem value="initiated">Eingeleitet</SelectItem>
-                                        <SelectItem value="pending">Wartend</SelectItem>
-                                        <SelectItem value="hearing_scheduled">Anhörung geplant</SelectItem>
-                                        <SelectItem value="under_deliberation">In Beratung</SelectItem>
-                                        <SelectItem value="suspended">Ausgesetzt</SelectItem>
-                                        <SelectItem value="settled">Verglichen</SelectItem>
-                                        <SelectItem value="decided">Entschieden</SelectItem>
-                                        <SelectItem value="closed">Geschlossen</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <select
+                                    v-model="form.status"
+                                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                >
+                                    <option value="">Status auswählen</option>
+                                    <option value="draft">Entwurf</option>
+                                    <option value="active">Aktiv</option>
+                                    <option value="initiated">Eingeleitet</option>
+                                    <option value="pending">Wartend</option>
+                                    <option value="hearing_scheduled">Anhörung geplant</option>
+                                    <option value="under_deliberation">In Beratung</option>
+                                    <option value="suspended">Ausgesetzt</option>
+                                    <option value="settled">Verglichen</option>
+                                    <option value="decided">Entschieden</option>
+                                    <option value="closed">Geschlossen</option>
+                                </select>
                                 <p v-if="form.errors.status" class="text-sm text-red-600">
                                     {{ form.errors.status }}
                                 </p>
@@ -167,7 +166,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Edit, Save, Check } from 'lucide-vue-next'
 import { show, update } from '@/routes/cases'
 
