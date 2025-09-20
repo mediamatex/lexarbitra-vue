@@ -86,6 +86,9 @@ jobs:
           DB_DATABASE="${{ secrets.DB_DATABASE }}"
           DB_USERNAME="${{ secrets.DB_USERNAME }}"
           DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+          DB_SOCKET=
+          DB_CHARSET=utf8mb4
+          DB_COLLATION=utf8mb4_unicode_ci
 
           SESSION_DRIVER=file
           SESSION_LIFETIME=120
@@ -96,7 +99,7 @@ jobs:
           BROADCAST_CONNECTION=log
           FILESYSTEM_DISK=local
           QUEUE_CONNECTION=database
-          CACHE_STORE=database
+          CACHE_STORE=file
 
           MAIL_MAILER=smtp
           MAIL_HOST="${{ secrets.MAIL_HOST }}"
@@ -251,7 +254,22 @@ jobs:
             cd ${{ secrets.PROJECT_PATH }}/laravel
 
             # Test database connection
-            php artisan tinker --execute="DB::connection()->getPdo(); echo 'Database connection successful';"
+            echo "Testing database connection..."
+            php artisan tinker --execute="
+            try {
+                \$pdo = DB::connection()->getPdo();
+                echo 'Database connection successful with driver: ' . \$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) . PHP_EOL;
+                echo 'Server info: ' . \$pdo->getAttribute(PDO::ATTR_SERVER_INFO) . PHP_EOL;
+            } catch (Exception \$e) {
+                echo 'Database connection failed: ' . \$e->getMessage() . PHP_EOL;
+                echo 'Checking database config...' . PHP_EOL;
+                echo 'DB_HOST: ' . config('database.connections.mysql.host') . PHP_EOL;
+                echo 'DB_PORT: ' . config('database.connections.mysql.port') . PHP_EOL;
+                echo 'DB_DATABASE: ' . config('database.connections.mysql.database') . PHP_EOL;
+                echo 'DB_USERNAME: ' . config('database.connections.mysql.username') . PHP_EOL;
+                throw \$e;
+            }
+            "
 
             # Run migrations on MASTER database only
             echo "🚀 Running database migrations..."
