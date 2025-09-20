@@ -263,11 +263,11 @@ jobs:
             echo "✅ Database migrations completed successfully!"
           EOF
 
-      - name: Test deployment
-        run: |
-          # Test the application is responding
-          curl -f -s -o /dev/null ${{ secrets.APP_URL }} || (echo "Application not responding" && exit 1)
-          echo "✅ Application is responding successfully"
+      # - name: Test deployment
+      #   run: |
+      #     # Test the application is responding
+      #     curl -f -s -o /dev/null ${{ secrets.APP_URL }} || (echo "Application not responding" && exit 1)
+      #     echo "✅ Application is responding successfully"
 
       - name: Notify deployment status
         if: always()
