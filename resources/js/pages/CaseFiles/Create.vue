@@ -48,11 +48,11 @@
                 <Card>
                     <CardHeader>
                         <CardTitle class="flex items-center gap-2">
-                            <component :is="steps[currentStep - 1].icon" class="h-5 w-5" />
-                            {{ steps[currentStep - 1].title }}
+                            <component :is="currentStepData.icon" class="h-5 w-5" />
+                            {{ currentStepData.title }}
                         </CardTitle>
                         <CardDescription>
-                            {{ steps[currentStep - 1].description }}
+                            {{ currentStepData.description }}
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -506,7 +506,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import AppLayout from '@/layouts/AppLayout.vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import { Button } from '@/components/ui/button'
@@ -534,8 +534,8 @@ import { index, store } from '@/routes/cases'
 // Current step tracker
 const currentStep = ref(1)
 
-// Step definitions
-const steps = [
+// Step definitions - making it reactive
+const steps = ref([
     {
         title: 'Grundlegende Informationen',
         description: 'Aktenzeichen, Titel und Verfahrensdetails',
@@ -556,7 +556,16 @@ const steps = [
         description: 'Daten prüfen und Fall erstellen',
         icon: FileCheck
     }
-]
+])
+
+// Computed property for current step data
+const currentStepData = computed(() => {
+    const index = currentStep.value - 1
+    if (index >= 0 && index < steps.value.length) {
+        return steps.value[index]
+    }
+    return steps.value[0] // Fallback to first step
+})
 
 // Form data
 const form = useForm({
