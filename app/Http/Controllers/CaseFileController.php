@@ -50,6 +50,7 @@ class CaseFileController extends Controller
             'case_number' => $validated['case_number'],
             'title' => $validated['title'],
             'status' => 'draft',
+            'initiated_at' => $validated['initiated_at'] ?? now(),
         ];
 
         // Only add created_by if the column exists (for backward compatibility during migration)
