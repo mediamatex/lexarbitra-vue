@@ -62,7 +62,6 @@ jobs:
           cat > deployment-package/.env << EOF
           APP_NAME="${{ secrets.APP_NAME }}"
           APP_ENV=production
-          APP_KEY="${{ secrets.APP_KEY }}"
           APP_DEBUG=true
           APP_URL="${{ secrets.APP_URL }}"
 
@@ -199,6 +198,9 @@ jobs:
               echo '{}' > public/build/manifest.json
               echo "Created empty Vite manifest for compatibility"
             fi
+
+            # Generate application key if not exists
+            php artisan key:generate --force --no-interaction
 
             # Clear configuration only (don't clear database cache before migrations)
             php artisan config:clear --no-interaction || true
