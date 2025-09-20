@@ -254,20 +254,20 @@ class CaseFileController extends Controller
         ]);
     }
 
-    public function edit(CaseReference $caseReference): Response
+    public function edit(CaseReference $case): Response
     {
         // If we have a tenant database, get the full case data from there
-        $caseData = $caseReference; // Default to landlord data
+        $caseData = $case; // Default to landlord data
 
-        if ($caseReference->tenant_case_id) {
-            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+        if ($case->tenant_case_id) {
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
 
             if ($connectionName) {
                 try {
                     // Get the actual case data from tenant database
                     $tenantCase = \DB::connection($connectionName)
                         ->table('case_files')
-                        ->where('id', $caseReference->tenant_case_id)
+                        ->where('id', $case->tenant_case_id)
                         ->first();
 
                     if ($tenantCase) {
@@ -276,16 +276,16 @@ class CaseFileController extends Controller
 
                         // Use tenant data but keep landlord reference info
                         $caseData = (object) array_merge($tenantCaseArray, [
-                            'id' => $caseReference->id, // Keep landlord ID for form submission
-                            'database_name' => $caseReference->database_name,
-                            'connection_name' => $caseReference->connection_name,
-                            'tenant_case_id' => $caseReference->tenant_case_id,
+                            'id' => $case->id, // Keep landlord ID for form submission
+                            'database_name' => $case->database_name,
+                            'connection_name' => $case->connection_name,
+                            'tenant_case_id' => $case->tenant_case_id,
                         ]);
                     }
                 } catch (\Exception $e) {
                     logger()->error('Failed to load tenant case data for editing', [
-                        'case_reference_id' => $caseReference->id,
-                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'case_reference_id' => $case->id,
+                        'tenant_case_id' => $case->tenant_case_id,
                         'error' => $e->getMessage()
                     ]);
                 }
@@ -294,31 +294,31 @@ class CaseFileController extends Controller
 
         return Inertia::render('CaseFiles/Edit', [
             'caseFile' => $caseData,
-            'caseReference' => $caseReference, // Original reference for form actions
+            'caseReference' => $case, // Original reference for form actions
         ]);
     }
 
-    public function update(Request $request, CaseReference $caseReference)
+    public function update(Request $request, CaseReference $case)
     {
         $validated = $request->validate([
-            'case_number' => 'required|string|unique:case_references,case_number,' . $caseReference->id,
+            'case_number' => 'required|string|unique:case_references,case_number,' . $case->id,
             'title' => 'required|string|max:255',
             'status' => 'nullable|string',
         ]);
 
         // Update the landlord case reference
-        $caseReference->update($validated);
+        $case->update($validated);
 
         // Also update the tenant database if it exists
-        if ($caseReference->tenant_case_id) {
-            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+        if ($case->tenant_case_id) {
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
 
             if ($connectionName) {
                 try {
                     // Update the tenant case data
                     \DB::connection($connectionName)
                         ->table('case_files')
-                        ->where('id', $caseReference->tenant_case_id)
+                        ->where('id', $case->tenant_case_id)
                         ->update([
                             'case_number' => $validated['case_number'],
                             'title' => $validated['title'],
@@ -327,14 +327,14 @@ class CaseFileController extends Controller
                         ]);
 
                     logger()->info('Case updated in both landlord and tenant databases', [
-                        'case_reference_id' => $caseReference->id,
-                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'case_reference_id' => $case->id,
+                        'tenant_case_id' => $case->tenant_case_id,
                         'updated_data' => $validated
                     ]);
                 } catch (\Exception $e) {
                     logger()->error('Failed to update tenant case data', [
-                        'case_reference_id' => $caseReference->id,
-                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'case_reference_id' => $case->id,
+                        'tenant_case_id' => $case->tenant_case_id,
                         'error' => $e->getMessage()
                     ]);
 
@@ -343,7 +343,7 @@ class CaseFileController extends Controller
             }
         }
 
-        return redirect()->route('cases.show', $caseReference)
+        return redirect()->route('cases.show', $case)
             ->with('success', 'Falldatei erfolgreich aktualisiert.');
     }
 
