@@ -45,20 +45,16 @@ class CaseFileController extends Controller
             'urgency_level' => 'nullable|string',
         ]);
 
-        // First, create a temporary minimal case file record in landlord database for database creation
-        $tempCaseFileData = [
+        // Create minimal case file record in landlord database (reference only)
+        $landlordCaseFileData = [
             'case_number' => $validated['case_number'],
             'title' => $validated['title'],
             'status' => 'draft',
             'initiated_at' => $validated['initiated_at'] ?? now(),
+            'created_by' => auth()->id(),
         ];
 
-        // Only add created_by if the column exists (for backward compatibility during migration)
-        if (\Schema::hasColumn('case_files', 'created_by')) {
-            $tempCaseFileData['created_by'] = auth()->id();
-        }
-
-        $tempCaseFile = CaseFile::create($tempCaseFileData);
+        $tempCaseFile = CaseFile::create($landlordCaseFileData);
 
         // Create case database
         try {
@@ -178,18 +174,11 @@ class CaseFileController extends Controller
                         'case_data' => $verifyCase
                     ]);
 
-                    // Update the landlord record with tenant case ID for reference and remove temp data
+                    // Update the landlord record with tenant case ID for reference
                     $tempCaseFile->update([
                         'tenant_case_id' => $tenantCaseId,
                         'database_connection_id' => $connection->id,
-                        // Clear the temp data from landlord - keep only references
-                        'description' => null,
-                        'dispute_value' => null,
-                        'currency' => null,
-                        'jurisdiction' => null,
-                        'case_category' => null,
-                        'complexity_level' => null,
-                        'urgency_level' => null,
+                        'status' => 'active', // Update status once tenant case is created
                     ]);
 
                     logger()->info('Landlord record updated with tenant references', [
