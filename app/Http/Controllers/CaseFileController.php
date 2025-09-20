@@ -256,8 +256,45 @@ class CaseFileController extends Controller
 
     public function edit(CaseReference $caseReference): Response
     {
+        // If we have a tenant database, get the full case data from there
+        $caseData = $caseReference; // Default to landlord data
+
+        if ($caseReference->tenant_case_id) {
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+
+            if ($connectionName) {
+                try {
+                    // Get the actual case data from tenant database
+                    $tenantCase = \DB::connection($connectionName)
+                        ->table('case_files')
+                        ->where('id', $caseReference->tenant_case_id)
+                        ->first();
+
+                    if ($tenantCase) {
+                        // Convert stdClass to array and merge with landlord reference data
+                        $tenantCaseArray = (array) $tenantCase;
+
+                        // Use tenant data but keep landlord reference info
+                        $caseData = (object) array_merge($tenantCaseArray, [
+                            'id' => $caseReference->id, // Keep landlord ID for form submission
+                            'database_name' => $caseReference->database_name,
+                            'connection_name' => $caseReference->connection_name,
+                            'tenant_case_id' => $caseReference->tenant_case_id,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    logger()->error('Failed to load tenant case data for editing', [
+                        'case_reference_id' => $caseReference->id,
+                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+
         return Inertia::render('CaseFiles/Edit', [
-            'caseFile' => $caseReference,
+            'caseFile' => $caseData,
+            'caseReference' => $caseReference, // Original reference for form actions
         ]);
     }
 
@@ -269,7 +306,42 @@ class CaseFileController extends Controller
             'status' => 'nullable|string',
         ]);
 
+        // Update the landlord case reference
         $caseReference->update($validated);
+
+        // Also update the tenant database if it exists
+        if ($caseReference->tenant_case_id) {
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+
+            if ($connectionName) {
+                try {
+                    // Update the tenant case data
+                    \DB::connection($connectionName)
+                        ->table('case_files')
+                        ->where('id', $caseReference->tenant_case_id)
+                        ->update([
+                            'case_number' => $validated['case_number'],
+                            'title' => $validated['title'],
+                            'status' => $validated['status'] ?? 'active',
+                            'updated_at' => now(),
+                        ]);
+
+                    logger()->info('Case updated in both landlord and tenant databases', [
+                        'case_reference_id' => $caseReference->id,
+                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'updated_data' => $validated
+                    ]);
+                } catch (\Exception $e) {
+                    logger()->error('Failed to update tenant case data', [
+                        'case_reference_id' => $caseReference->id,
+                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'error' => $e->getMessage()
+                    ]);
+
+                    // Continue anyway - landlord was updated successfully
+                }
+            }
+        }
 
         return redirect()->route('cases.show', $caseReference)
             ->with('success', 'Falldatei erfolgreich aktualisiert.');

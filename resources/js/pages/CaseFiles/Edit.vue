@@ -13,7 +13,7 @@
                         </p>
                     </div>
                     <Button variant="outline" as-child>
-                        <Link :href="show.url({ case: caseFile.id })">
+                        <Link :href="show.url({ case: caseReference.id })">
                             <ArrowLeft class="mr-2 h-4 w-4" />
                             Zurück zum Fall
                         </Link>
@@ -110,19 +110,19 @@
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <Label class="text-xs text-muted-foreground">Datenbank Name</Label>
-                                        <p class="text-sm font-mono">{{ caseFile.database_name || 'Nicht verfügbar' }}</p>
+                                        <p class="text-sm font-mono">{{ caseReference.database_name || 'Nicht verfügbar' }}</p>
                                     </div>
                                     <div>
                                         <Label class="text-xs text-muted-foreground">Verbindungsname</Label>
-                                        <p class="text-sm font-mono">{{ caseFile.connection_name || 'Nicht verfügbar' }}</p>
+                                        <p class="text-sm font-mono">{{ caseReference.connection_name || 'Nicht verfügbar' }}</p>
                                     </div>
                                     <div>
                                         <Label class="text-xs text-muted-foreground">Erstellt am</Label>
-                                        <p class="text-sm">{{ formatDate(caseFile.created_at) }}</p>
+                                        <p class="text-sm">{{ formatDate(caseReference.created_at) }}</p>
                                     </div>
                                     <div>
                                         <Label class="text-xs text-muted-foreground">Tenant Case ID</Label>
-                                        <p class="text-sm font-mono">{{ caseFile.tenant_case_id || 'Nicht gesetzt' }}</p>
+                                        <p class="text-sm font-mono">{{ caseReference.tenant_case_id || 'Nicht gesetzt' }}</p>
                                     </div>
                                 </div>
                             </div>
@@ -142,7 +142,7 @@
                             <!-- Form Actions -->
                             <div class="flex items-center justify-between pt-6">
                                 <Button variant="outline" as-child>
-                                    <Link :href="show.url({ case: caseFile.id })">
+                                    <Link :href="show.url({ case: caseReference.id })">
                                         Abbrechen
                                     </Link>
                                 </Button>
@@ -173,16 +173,17 @@ import { show, update } from '@/routes/cases'
 
 const props = defineProps({
     caseFile: Object,
+    caseReference: Object,
 })
 
 const form = useForm({
-    case_number: props.caseFile.case_number,
-    title: props.caseFile.title,
-    status: props.caseFile.status,
+    case_number: props.caseFile?.case_number || '',
+    title: props.caseFile?.title || '',
+    status: props.caseFile?.status || 'active',
 })
 
 const submitForm = () => {
-    form.put(update.url({ case: props.caseFile.id }))
+    form.put(update.url({ case: props.caseReference.id }))
 }
 
 const formatDate = (dateString) => {
