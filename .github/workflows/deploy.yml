@@ -58,8 +58,12 @@ jobs:
             npm ci
             npm run build
 
-            # Run migrations
+            # Run migrations on MASTER database only
+            # Case databases are created dynamically via KAS API when needed
             php artisan migrate --force
+
+            # Verify KAS API configuration is working
+            php artisan tinker --execute="app(\App\Services\KasApiService::class)->testConnection();" || echo "KAS API connection test failed - check credentials"
 
             # Clear caches
             php artisan config:cache
