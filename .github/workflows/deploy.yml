@@ -1,0 +1,77 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          tools: composer:v2
+          extensions: pdo, sqlite, pdo_sqlite, bcmath, soap, zip, exif, gd, mbstring
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Install PHP Dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+
+      - name: Build Assets
+        run: npm run build
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.PORT }}
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+
+            # Backup current version
+            cp -r . ../backup-$(date +%Y%m%d_%H%M%S) || true
+
+            # Pull latest changes
+            git fetch origin
+            git reset --hard origin/main
+
+            # Install dependencies
+            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+            npm ci
+            npm run build
+
+            # Run migrations
+            php artisan migrate --force
+
+            # Clear caches
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            php artisan event:cache
+
+            # Set proper permissions
+            chown -R www-data:www-data storage bootstrap/cache
+            chmod -R 775 storage bootstrap/cache
+
+            # Restart services (adjust as needed for your server)
+            sudo supervisorctl restart all || true
+            sudo systemctl reload php8.4-fpm || true
+            sudo systemctl reload nginx || true
