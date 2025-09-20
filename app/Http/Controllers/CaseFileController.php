@@ -172,9 +172,19 @@ class CaseFileController extends Controller
                     ];
 
                     // Only add created_by if the column exists in tenant database
-                    if (\Schema::connection($connectionName)->hasColumn('case_files', 'created_by')) {
-                        $tenantCaseData['created_by'] = auth()->id();
-                        logger()->info('Set created_by for tenant case', ['created_by' => auth()->id()]);
+                    try {
+                        if (\Schema::connection($connectionName)->hasColumn('case_files', 'created_by')) {
+                            $tenantCaseData['created_by'] = auth()->id();
+                            logger()->info('Set created_by for tenant case', ['created_by' => auth()->id()]);
+                        } else {
+                            logger()->info('created_by column does not exist in tenant database');
+                        }
+                    } catch (\Exception $e) {
+                        logger()->warning('Could not check for created_by column', [
+                            'error' => $e->getMessage(),
+                            'connection_name' => $connectionName,
+                        ]);
+                        // Continue without created_by
                     }
 
                     logger()->info('Inserting case data directly to tenant database', [
@@ -183,17 +193,26 @@ class CaseFileController extends Controller
                     ]);
 
                     // Use Query Builder to force insertion into tenant database
-                    $insertResult = \DB::connection($connectionName)
-                        ->table('case_files')
-                        ->insert($tenantCaseData);
+                    try {
+                        $insertResult = \DB::connection($connectionName)
+                            ->table('case_files')
+                            ->insert($tenantCaseData);
 
-                    $tenantCaseId = $tenantCaseData['id'];
+                        $tenantCaseId = $tenantCaseData['id'];
 
-                    logger()->info('Case data inserted to tenant database', [
-                        'tenant_case_id' => $tenantCaseId,
-                        'connection_name' => $connectionName,
-                        'insert_result' => $insertResult,
-                    ]);
+                        logger()->info('Case data inserted to tenant database', [
+                            'tenant_case_id' => $tenantCaseId,
+                            'connection_name' => $connectionName,
+                            'insert_result' => $insertResult,
+                        ]);
+                    } catch (\Exception $e) {
+                        logger()->error('Failed to insert case data to tenant database', [
+                            'connection_name' => $connectionName,
+                            'error' => $e->getMessage(),
+                            'case_data' => $tenantCaseData,
+                        ]);
+                        throw $e;
+                    }
 
                     // Verify the case was actually saved in tenant database
                     $verifyCase = \DB::connection($connectionName)
@@ -207,15 +226,24 @@ class CaseFileController extends Controller
                     ]);
 
                     // Update the case reference with tenant case ID
-                    $caseReference->update([
-                        'tenant_case_id' => $tenantCaseId,
-                        'status' => 'active', // Update status once tenant case is created
-                    ]);
+                    try {
+                        $updateResult = $caseReference->update([
+                            'tenant_case_id' => $tenantCaseId,
+                        ]);
 
-                    logger()->info('Case reference updated with tenant case ID', [
-                        'case_reference_id' => $caseReference->id,
-                        'tenant_case_id' => $tenantCaseId,
-                    ]);
+                        logger()->info('Case reference updated with tenant case ID', [
+                            'case_reference_id' => $caseReference->id,
+                            'tenant_case_id' => $tenantCaseId,
+                            'update_result' => $updateResult,
+                        ]);
+                    } catch (\Exception $e) {
+                        logger()->error('Failed to update case reference with tenant case ID', [
+                            'case_reference_id' => $caseReference->id,
+                            'tenant_case_id' => $tenantCaseId,
+                            'error' => $e->getMessage(),
+                        ]);
+                        throw $e;
+                    }
 
                     // Return the case reference
                     $caseFile = $caseReference;
