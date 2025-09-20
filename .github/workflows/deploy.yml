@@ -1,5 +1,5 @@
 name: Deploy to all-inkl.com
-# Trigger deployment
+# Deploy with database credentials
 
 on:
   push:
