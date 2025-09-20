@@ -68,29 +68,84 @@ class CaseFileController extends Controller
             $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseFile);
 
             if ($connectionName) {
-                // Run migrations on the case database
-                \Artisan::call('migrate', [
-                    '--database' => $connectionName,
-                    '--force' => true,
-                ]);
+                try {
+                    // Run migrations on the case database
+                    logger()->info('Running migrations on tenant database', [
+                        'connection_name' => $connectionName,
+                        'case_id' => $caseFile->id
+                    ]);
 
-                // Now save the full case data in the tenant database
-                $tenantCaseFile = new CaseFile();
-                $tenantCaseFile->setConnection($connectionName);
-                $tenantCaseFile->fill($validated);
+                    $migrateResult = \Artisan::call('migrate', [
+                        '--database' => $connectionName,
+                        '--force' => true,
+                    ]);
 
-                // Only set created_by if the column exists in tenant database
-                if (\Schema::connection($connectionName)->hasColumn('case_files', 'created_by')) {
-                    $tenantCaseFile->created_by = auth()->id();
+                    logger()->info('Migration result', [
+                        'result' => $migrateResult,
+                        'output' => \Artisan::output()
+                    ]);
+
+                    // Test tenant database connection
+                    $testConnection = \DB::connection($connectionName)->getPdo();
+                    logger()->info('Tenant database connection test successful', [
+                        'connection_name' => $connectionName
+                    ]);
+
+                    // Check if case_files table exists in tenant database
+                    $tablesExist = \Schema::connection($connectionName)->hasTable('case_files');
+                    logger()->info('Tenant database table check', [
+                        'case_files_exists' => $tablesExist,
+                        'connection_name' => $connectionName
+                    ]);
+
+                    if (!$tablesExist) {
+                        throw new \Exception('case_files table does not exist in tenant database after migration');
+                    }
+
+                    // Now save the full case data in the tenant database
+                    $tenantCaseFile = new CaseFile();
+                    $tenantCaseFile->setConnection($connectionName);
+                    $tenantCaseFile->fill($validated);
+
+                    // Only set created_by if the column exists in tenant database
+                    if (\Schema::connection($connectionName)->hasColumn('case_files', 'created_by')) {
+                        $tenantCaseFile->created_by = auth()->id();
+                    }
+
+                    logger()->info('Saving case data to tenant database', [
+                        'connection_name' => $connectionName,
+                        'case_data' => $tenantCaseFile->toArray()
+                    ]);
+
+                    $tenantCaseFile->save();
+
+                    logger()->info('Case data saved to tenant database', [
+                        'tenant_case_id' => $tenantCaseFile->id,
+                        'connection_name' => $connectionName
+                    ]);
+
+                    // Update the landlord record with tenant case ID for reference
+                    $caseFile->update([
+                        'tenant_case_id' => $tenantCaseFile->id,
+                        'database_connection_id' => $connection->id,
+                    ]);
+
+                    logger()->info('Landlord record updated with tenant references', [
+                        'landlord_case_id' => $caseFile->id,
+                        'tenant_case_id' => $tenantCaseFile->id
+                    ]);
+
+                } catch (\Exception $e) {
+                    logger()->error('Failed to setup tenant database or save data', [
+                        'connection_name' => $connectionName,
+                        'case_id' => $caseFile->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+
+                    // Continue without failing the entire case creation
+                    // The case will exist in landlord DB even if tenant setup fails
                 }
-
-                $tenantCaseFile->save();
-
-                // Update the landlord record with tenant case ID for reference
-                $caseFile->update([
-                    'tenant_case_id' => $tenantCaseFile->id,
-                    'database_connection_id' => $connection->id,
-                ]);
             }
 
         } catch (\Exception $e) {
