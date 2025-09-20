@@ -33,18 +33,7 @@
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <Form
-                            :action="update.url({ case: caseFile.id })"
-                            method="put"
-                            class="space-y-6"
-                            #default="{
-                                errors,
-                                hasErrors,
-                                processing,
-                                wasSuccessful,
-                                recentlySuccessful
-                            }"
-                        >
+                        <form @submit.prevent="submitForm" class="space-y-6">
                             <!-- Case Number -->
                             <div class="space-y-2">
                                 <Label for="case_number" class="text-sm font-medium">
@@ -53,13 +42,12 @@
                                 </Label>
                                 <Input
                                     id="case_number"
-                                    name="case_number"
-                                    :value="caseFile.case_number"
+                                    v-model="form.case_number"
                                     placeholder="ARB-2024-001"
                                     required
                                 />
-                                <p v-if="errors.case_number" class="text-sm text-red-600">
-                                    {{ errors.case_number }}
+                                <p v-if="form.errors.case_number" class="text-sm text-red-600">
+                                    {{ form.errors.case_number }}
                                 </p>
                                 <p class="text-sm text-muted-foreground">
                                     Eindeutige Kennzeichnung des Schiedsverfahrens
@@ -74,13 +62,12 @@
                                 </Label>
                                 <Input
                                     id="title"
-                                    name="title"
-                                    :value="caseFile.title"
+                                    v-model="form.title"
                                     placeholder="Streit zwischen Firma A und Firma B"
                                     required
                                 />
-                                <p v-if="errors.title" class="text-sm text-red-600">
-                                    {{ errors.title }}
+                                <p v-if="form.errors.title" class="text-sm text-red-600">
+                                    {{ form.errors.title }}
                                 </p>
                                 <p class="text-sm text-muted-foreground">
                                     Kurze prägnante Beschreibung des Falls
@@ -92,7 +79,7 @@
                                 <Label for="status" class="text-sm font-medium">
                                     Status
                                 </Label>
-                                <Select name="status" :value="caseFile.status">
+                                <Select v-model="form.status">
                                     <SelectTrigger>
                                         <SelectValue placeholder="Status auswählen" />
                                     </SelectTrigger>
@@ -109,8 +96,8 @@
                                         <SelectItem value="closed">Geschlossen</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <p v-if="errors.status" class="text-sm text-red-600">
-                                    {{ errors.status }}
+                                <p v-if="form.errors.status" class="text-sm text-red-600">
+                                    {{ form.errors.status }}
                                 </p>
                                 <p class="text-sm text-muted-foreground">
                                     Aktueller Status des Schiedsverfahrens
@@ -141,7 +128,7 @@
                             </div>
 
                             <!-- Success Message -->
-                            <div v-if="recentlySuccessful" class="rounded-md bg-green-50 p-4">
+                            <div v-if="form.recentlySuccessful" class="rounded-md bg-green-50 p-4">
                                 <div class="flex">
                                     <Check class="h-5 w-5 text-green-400" />
                                     <div class="ml-3">
@@ -159,13 +146,13 @@
                                         Abbrechen
                                     </Link>
                                 </Button>
-                                <Button type="submit" :disabled="processing">
-                                    <Save v-if="!processing" class="mr-2 h-4 w-4" />
+                                <Button type="submit" :disabled="form.processing">
+                                    <Save v-if="!form.processing" class="mr-2 h-4 w-4" />
                                     <div v-else class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                                    {{ processing ? 'Speichern...' : 'Änderungen speichern' }}
+                                    {{ form.processing ? 'Speichern...' : 'Änderungen speichern' }}
                                 </Button>
                             </div>
-                        </Form>
+                        </form>
                     </CardContent>
                 </Card>
             </div>
@@ -175,19 +162,28 @@
 
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue'
-import { Head, Link } from '@inertiajs/vue3'
+import { Head, Link, useForm } from '@inertiajs/vue3'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Form } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Edit, Save, Check } from 'lucide-vue-next'
 import { show, update } from '@/routes/cases'
 
-defineProps({
+const props = defineProps({
     caseFile: Object,
 })
+
+const form = useForm({
+    case_number: props.caseFile.case_number,
+    title: props.caseFile.title,
+    status: props.caseFile.status,
+})
+
+const submitForm = () => {
+    form.put(update.url({ case: props.caseFile.id }))
+}
 
 const formatDate = (dateString) => {
     if (!dateString) return '-'
