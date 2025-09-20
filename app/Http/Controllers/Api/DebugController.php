@@ -17,11 +17,22 @@ class DebugController extends Controller
     {
         $caseReferences = CaseReference::all();
 
+        // Get current database connection info
+        $currentConnection = config('database.default');
+        $currentDbConfig = config("database.connections.{$currentConnection}");
+
         $stats = [
             'total_cases' => $caseReferences->count(),
             'active_cases' => $caseReferences->where('is_active', true)->count(),
             'cases_with_tenant_data' => $caseReferences->whereNotNull('tenant_case_id')->count(),
             'broken_cases' => $caseReferences->whereNull('tenant_case_id')->count(),
+            'current_db' => [
+                'connection' => $currentConnection,
+                'driver' => $currentDbConfig['driver'] ?? 'unknown',
+                'host' => $currentDbConfig['host'] ?? 'unknown',
+                'database' => $currentDbConfig['database'] ?? 'unknown',
+                'port' => $currentDbConfig['port'] ?? 'unknown'
+            ],
             'case_details' => []
         ];
 

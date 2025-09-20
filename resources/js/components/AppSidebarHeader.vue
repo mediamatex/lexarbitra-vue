@@ -41,10 +41,15 @@ onMounted(async () => {
         <!-- Database Debug Info -->
         <div v-if="dbInfo" class="ml-auto text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1 font-mono">
             <div class="flex items-center gap-4">
+                <span class="font-semibold text-blue-600">
+                    DB: {{ dbInfo.current_db?.database || 'unknown' }}@{{ dbInfo.current_db?.host || 'unknown' }}
+                </span>
                 <span>Cases: {{ dbInfo.total_cases }}</span>
                 <span>Active: {{ dbInfo.active_cases }}</span>
                 <span>With Data: {{ dbInfo.cases_with_tenant_data }}</span>
-                <span>Broken: {{ dbInfo.broken_cases }}</span>
+                <span v-if="dbInfo.broken_cases > 0" class="text-red-600 font-semibold">
+                    Broken: {{ dbInfo.broken_cases }}
+                </span>
             </div>
         </div>
     </header>
