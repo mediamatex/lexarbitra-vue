@@ -307,6 +307,10 @@ jobs:
             echo "🚀 Running database migrations..."
             php artisan migrate --force --no-interaction
 
+            # Seed the admin user
+            echo "🌱 Seeding admin user..."
+            php artisan db:seed --class=AdminUserSeeder --no-interaction
+
             # Test KAS API connection
             php artisan tinker --execute="app(\App\Services\KasApiService::class)->testConnection();" || echo "KAS API connection test failed - check credentials"
 
