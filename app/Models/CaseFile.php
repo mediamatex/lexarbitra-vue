@@ -71,6 +71,9 @@ class CaseFile extends Model
         'tags',
         'custom_fields',
         'last_activity_at',
+        'created_by',
+        'tenant_case_id',
+        'database_connection_id',
     ];
 
     protected function casts(): array
@@ -136,9 +139,14 @@ class CaseFile extends Model
         return $this->hasMany(Document::class);
     }
 
-    public function databaseConnection(): HasOne
+    public function databaseConnection(): BelongsTo
     {
-        return $this->hasOne(CaseDatabaseConnection::class);
+        return $this->belongsTo(CaseDatabaseConnection::class, 'database_connection_id');
+    }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     // Helper methods

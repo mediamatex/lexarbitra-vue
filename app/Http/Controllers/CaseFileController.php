@@ -45,17 +45,54 @@ class CaseFileController extends Controller
             'urgency_level' => 'nullable|string',
         ]);
 
-        $caseFile = CaseFile::create($validated);
+        // First, create a minimal case file record in landlord database (just for reference)
+        $caseFile = CaseFile::create([
+            'case_number' => $validated['case_number'],
+            'title' => $validated['title'],
+            'status' => 'draft',
+            'created_by' => auth()->id(),
+        ]);
 
         // Create case database
         try {
-            $this->caseDatabaseService->createCaseDatabase($caseFile);
+            $connection = $this->caseDatabaseService->createCaseDatabase($caseFile);
+
+            // Switch to the case database and run migrations
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseFile);
+
+            if ($connectionName) {
+                // Run migrations on the case database
+                \Artisan::call('migrate', [
+                    '--database' => $connectionName,
+                    '--force' => true,
+                ]);
+
+                // Now save the full case data in the tenant database
+                $tenantCaseFile = new CaseFile();
+                $tenantCaseFile->setConnection($connectionName);
+                $tenantCaseFile->fill($validated);
+                $tenantCaseFile->created_by = auth()->id();
+                $tenantCaseFile->save();
+
+                // Update the landlord record with tenant case ID for reference
+                $caseFile->update([
+                    'tenant_case_id' => $tenantCaseFile->id,
+                    'database_connection_id' => $connection->id,
+                ]);
+            }
+
         } catch (\Exception $e) {
-            // Log error but don't fail case creation
+            // If database creation fails, clean up and show error
+            $caseFile->delete();
+
             logger()->error('Failed to create case database', [
-                'case_id' => $caseFile->id,
+                'case_number' => $validated['case_number'],
                 'error' => $e->getMessage()
             ]);
+
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['database' => 'Fehler beim Erstellen der Falldatenbank: ' . $e->getMessage()]);
         }
 
         return redirect()->route('cases.show', $caseFile)
@@ -64,16 +101,43 @@ class CaseFileController extends Controller
 
     public function show(CaseFile $caseFile): Response
     {
-        $caseFile->load([
-            'referee',
-            'participants.user',
-            'parties',
-            'documents',
-            'databaseConnection'
-        ]);
+        // Load the database connection info first
+        $caseFile->load(['databaseConnection']);
+
+        // If we have a tenant database, get the full case data from there
+        $tenantCaseData = null;
+        if ($caseFile->database_connection_id && $caseFile->tenant_case_id) {
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseFile);
+
+            if ($connectionName) {
+                try {
+                    $tenantCase = CaseFile::on($connectionName)
+                        ->with([
+                            'referee',
+                            'participants.user',
+                            'parties',
+                            'documents'
+                        ])
+                        ->find($caseFile->tenant_case_id);
+
+                    $tenantCaseData = $tenantCase;
+                } catch (\Exception $e) {
+                    logger()->error('Failed to load tenant case data', [
+                        'landlord_case_id' => $caseFile->id,
+                        'tenant_case_id' => $caseFile->tenant_case_id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+
+        // Use tenant data if available, otherwise fall back to landlord data
+        $displayCase = $tenantCaseData ?? $caseFile;
 
         return Inertia::render('CaseFiles/Show', [
-            'caseFile' => $caseFile,
+            'caseFile' => $displayCase,
+            'hasTenantDatabase' => $tenantCaseData !== null,
+            'landlordCase' => $tenantCaseData ? $caseFile : null,
         ]);
     }
 

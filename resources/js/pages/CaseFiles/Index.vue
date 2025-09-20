@@ -134,17 +134,17 @@
     </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Eye, Edit, Trash2, Database, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { create, show, edit, destroy } from '@/routes/cases'
 
-const props = defineProps({
+defineProps({
     cases: Object,
 })
 
