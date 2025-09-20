@@ -45,8 +45,8 @@ class CaseFileController extends Controller
             'urgency_level' => 'nullable|string',
         ]);
 
-        // First, create a minimal case file record in landlord database (just for reference)
-        $caseFileData = [
+        // First, create a temporary minimal case file record in landlord database for database creation
+        $tempCaseFileData = [
             'case_number' => $validated['case_number'],
             'title' => $validated['title'],
             'status' => 'draft',
@@ -55,17 +55,17 @@ class CaseFileController extends Controller
 
         // Only add created_by if the column exists (for backward compatibility during migration)
         if (\Schema::hasColumn('case_files', 'created_by')) {
-            $caseFileData['created_by'] = auth()->id();
+            $tempCaseFileData['created_by'] = auth()->id();
         }
 
-        $caseFile = CaseFile::create($caseFileData);
+        $tempCaseFile = CaseFile::create($tempCaseFileData);
 
         // Create case database
         try {
-            $connection = $this->caseDatabaseService->createCaseDatabase($caseFile);
+            $connection = $this->caseDatabaseService->createCaseDatabase($tempCaseFile);
 
             // Switch to the case database and run migrations
-            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseFile);
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($tempCaseFile);
 
             if ($connectionName) {
                 try {
@@ -102,55 +102,69 @@ class CaseFileController extends Controller
                         throw new \Exception('case_files table does not exist in tenant database after migration');
                     }
 
-                    // Now save the full case data in the tenant database
-                    $tenantCaseFile = new CaseFile();
-                    $tenantCaseFile->setConnection($connectionName);
-                    $tenantCaseFile->fill($validated);
+                    // Now create the REAL case file directly in the tenant database
+                    $realCaseFile = new CaseFile();
+                    $realCaseFile->setConnection($connectionName);
+                    $realCaseFile->fill($validated);
 
                     // Only set created_by if the column exists in tenant database
                     if (\Schema::connection($connectionName)->hasColumn('case_files', 'created_by')) {
-                        $tenantCaseFile->created_by = auth()->id();
+                        $realCaseFile->created_by = auth()->id();
                     }
 
                     logger()->info('Saving case data to tenant database', [
                         'connection_name' => $connectionName,
-                        'case_data' => $tenantCaseFile->toArray()
+                        'case_data' => $realCaseFile->toArray()
                     ]);
 
-                    $tenantCaseFile->save();
+                    $realCaseFile->save();
 
                     logger()->info('Case data saved to tenant database', [
-                        'tenant_case_id' => $tenantCaseFile->id,
+                        'tenant_case_id' => $realCaseFile->id,
                         'connection_name' => $connectionName
                     ]);
 
-                    // Update the landlord record with tenant case ID for reference
-                    $caseFile->update([
-                        'tenant_case_id' => $tenantCaseFile->id,
+                    // Update the landlord record with tenant case ID for reference and remove temp data
+                    $tempCaseFile->update([
+                        'tenant_case_id' => $realCaseFile->id,
                         'database_connection_id' => $connection->id,
+                        // Clear the temp data from landlord - keep only references
+                        'description' => null,
+                        'dispute_value' => null,
+                        'currency' => null,
+                        'jurisdiction' => null,
+                        'case_category' => null,
+                        'complexity_level' => null,
+                        'urgency_level' => null,
                     ]);
 
                     logger()->info('Landlord record updated with tenant references', [
-                        'landlord_case_id' => $caseFile->id,
-                        'tenant_case_id' => $tenantCaseFile->id
+                        'landlord_case_id' => $tempCaseFile->id,
+                        'tenant_case_id' => $realCaseFile->id
                     ]);
+
+                    // Return the temp case file (which now acts as landlord reference)
+                    $caseFile = $tempCaseFile;
 
                 } catch (\Exception $e) {
                     logger()->error('Failed to setup tenant database or save data', [
                         'connection_name' => $connectionName,
-                        'case_id' => $caseFile->id,
+                        'case_id' => $tempCaseFile->id,
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString()
                     ]);
 
                     // Continue without failing the entire case creation
                     // The case will exist in landlord DB even if tenant setup fails
+                    $caseFile = $tempCaseFile;
                 }
+            } else {
+                $caseFile = $tempCaseFile;
             }
 
         } catch (\Exception $e) {
             // If database creation fails, clean up and show error
-            $caseFile->delete();
+            $tempCaseFile->delete();
 
             logger()->error('Failed to create case database', [
                 'case_number' => $validated['case_number'],
