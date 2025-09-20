@@ -1,0 +1,202 @@
+<template>
+    <Head title="Fall bearbeiten" />
+
+    <AppLayout>
+        <div class="py-12">
+            <div class="mx-auto max-w-4xl sm:px-6 lg:px-8">
+                <!-- Header -->
+                <div class="mb-8 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-3xl font-bold tracking-tight">Fall bearbeiten</h2>
+                        <p class="text-muted-foreground">
+                            Grundlegende Informationen der Falldatei bearbeiten
+                        </p>
+                    </div>
+                    <Button variant="outline" as-child>
+                        <Link :href="show.url({ case: caseFile.id })">
+                            <ArrowLeft class="mr-2 h-4 w-4" />
+                            Zurück zum Fall
+                        </Link>
+                    </Button>
+                </div>
+
+                <!-- Form Card -->
+                <Card>
+                    <CardHeader>
+                        <CardTitle class="flex items-center gap-2">
+                            <Edit class="h-5 w-5" />
+                            Falldaten bearbeiten
+                        </CardTitle>
+                        <CardDescription>
+                            Bearbeiten Sie die grundlegenden Informationen der Falldatei.
+                            Detaillierte Fallinhalt werden in der dedizierten Falldatenbank gespeichert.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Form
+                            :action="update.url({ case: caseFile.id })"
+                            method="put"
+                            class="space-y-6"
+                            #default="{
+                                errors,
+                                hasErrors,
+                                processing,
+                                wasSuccessful,
+                                recentlySuccessful
+                            }"
+                        >
+                            <!-- Case Number -->
+                            <div class="space-y-2">
+                                <Label for="case_number" class="text-sm font-medium">
+                                    Aktenzeichen
+                                    <span class="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                    id="case_number"
+                                    name="case_number"
+                                    :value="caseFile.case_number"
+                                    placeholder="ARB-2024-001"
+                                    required
+                                />
+                                <p v-if="errors.case_number" class="text-sm text-red-600">
+                                    {{ errors.case_number }}
+                                </p>
+                                <p class="text-sm text-muted-foreground">
+                                    Eindeutige Kennzeichnung des Schiedsverfahrens
+                                </p>
+                            </div>
+
+                            <!-- Title -->
+                            <div class="space-y-2">
+                                <Label for="title" class="text-sm font-medium">
+                                    Titel
+                                    <span class="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                    id="title"
+                                    name="title"
+                                    :value="caseFile.title"
+                                    placeholder="Streit zwischen Firma A und Firma B"
+                                    required
+                                />
+                                <p v-if="errors.title" class="text-sm text-red-600">
+                                    {{ errors.title }}
+                                </p>
+                                <p class="text-sm text-muted-foreground">
+                                    Kurze prägnante Beschreibung des Falls
+                                </p>
+                            </div>
+
+                            <!-- Status -->
+                            <div class="space-y-2">
+                                <Label for="status" class="text-sm font-medium">
+                                    Status
+                                </Label>
+                                <Select name="status" :value="caseFile.status">
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Status auswählen" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="draft">Entwurf</SelectItem>
+                                        <SelectItem value="active">Aktiv</SelectItem>
+                                        <SelectItem value="initiated">Eingeleitet</SelectItem>
+                                        <SelectItem value="pending">Wartend</SelectItem>
+                                        <SelectItem value="hearing_scheduled">Anhörung geplant</SelectItem>
+                                        <SelectItem value="under_deliberation">In Beratung</SelectItem>
+                                        <SelectItem value="suspended">Ausgesetzt</SelectItem>
+                                        <SelectItem value="settled">Verglichen</SelectItem>
+                                        <SelectItem value="decided">Entschieden</SelectItem>
+                                        <SelectItem value="closed">Geschlossen</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p v-if="errors.status" class="text-sm text-red-600">
+                                    {{ errors.status }}
+                                </p>
+                                <p class="text-sm text-muted-foreground">
+                                    Aktueller Status des Schiedsverfahrens
+                                </p>
+                            </div>
+
+                            <!-- Database Info (Read-only) -->
+                            <div class="space-y-4 rounded-lg border bg-muted/50 p-4">
+                                <h4 class="text-sm font-medium text-muted-foreground">Datenbank-Informationen</h4>
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                        <Label class="text-xs text-muted-foreground">Datenbank Name</Label>
+                                        <p class="text-sm font-mono">{{ caseFile.database_name || 'Nicht verfügbar' }}</p>
+                                    </div>
+                                    <div>
+                                        <Label class="text-xs text-muted-foreground">Verbindungsname</Label>
+                                        <p class="text-sm font-mono">{{ caseFile.connection_name || 'Nicht verfügbar' }}</p>
+                                    </div>
+                                    <div>
+                                        <Label class="text-xs text-muted-foreground">Erstellt am</Label>
+                                        <p class="text-sm">{{ formatDate(caseFile.created_at) }}</p>
+                                    </div>
+                                    <div>
+                                        <Label class="text-xs text-muted-foreground">Tenant Case ID</Label>
+                                        <p class="text-sm font-mono">{{ caseFile.tenant_case_id || 'Nicht gesetzt' }}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Success Message -->
+                            <div v-if="recentlySuccessful" class="rounded-md bg-green-50 p-4">
+                                <div class="flex">
+                                    <Check class="h-5 w-5 text-green-400" />
+                                    <div class="ml-3">
+                                        <p class="text-sm font-medium text-green-800">
+                                            Fall erfolgreich aktualisiert!
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="flex items-center justify-between pt-6">
+                                <Button variant="outline" as-child>
+                                    <Link :href="show.url({ case: caseFile.id })">
+                                        Abbrechen
+                                    </Link>
+                                </Button>
+                                <Button type="submit" :disabled="processing">
+                                    <Save v-if="!processing" class="mr-2 h-4 w-4" />
+                                    <div v-else class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                                    {{ processing ? 'Speichern...' : 'Änderungen speichern' }}
+                                </Button>
+                            </div>
+                        </Form>
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
+    </AppLayout>
+</template>
+
+<script setup lang="ts">
+import AppLayout from '@/layouts/AppLayout.vue'
+import { Head, Link } from '@inertiajs/vue3'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Form } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ArrowLeft, Edit, Save, Check } from 'lucide-vue-next'
+import { show, update } from '@/routes/cases'
+
+defineProps({
+    caseFile: Object,
+})
+
+const formatDate = (dateString) => {
+    if (!dateString) return '-'
+    return new Date(dateString).toLocaleDateString('de-DE', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    })
+}
+</script>
