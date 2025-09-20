@@ -159,8 +159,8 @@ class CaseDatabaseService
         $connectionName = $caseReference->connection_name;
         $host = $caseReference->database_host;
 
-        // Check if this is a local SQLite database (indicated by file path in host)
-        if (env('LOCAL_CASE_DB_TEST', false) && str_contains($host, '.sqlite')) {
+        // Check if this is a SQLite database (indicated by .sqlite extension in host path)
+        if (str_contains($host, '.sqlite')) {
             // Configure SQLite connection for local testing
             Config::set("database.connections.{$connectionName}", [
                 'driver' => 'sqlite',
