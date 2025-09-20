@@ -46,12 +46,18 @@ class CaseFileController extends Controller
         ]);
 
         // First, create a minimal case file record in landlord database (just for reference)
-        $caseFile = CaseFile::create([
+        $caseFileData = [
             'case_number' => $validated['case_number'],
             'title' => $validated['title'],
             'status' => 'draft',
-            'created_by' => auth()->id(),
-        ]);
+        ];
+
+        // Only add created_by if the column exists (for backward compatibility during migration)
+        if (\Schema::hasColumn('case_files', 'created_by')) {
+            $caseFileData['created_by'] = auth()->id();
+        }
+
+        $caseFile = CaseFile::create($caseFileData);
 
         // Create case database
         try {
@@ -71,7 +77,12 @@ class CaseFileController extends Controller
                 $tenantCaseFile = new CaseFile();
                 $tenantCaseFile->setConnection($connectionName);
                 $tenantCaseFile->fill($validated);
-                $tenantCaseFile->created_by = auth()->id();
+
+                // Only set created_by if the column exists in tenant database
+                if (\Schema::connection($connectionName)->hasColumn('case_files', 'created_by')) {
+                    $tenantCaseFile->created_by = auth()->id();
+                }
+
                 $tenantCaseFile->save();
 
                 // Update the landlord record with tenant case ID for reference
