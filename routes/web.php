@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\DebugController;
 use App\Http\Controllers\CaseFileController;
 use App\Models\CaseReference;
 use Illuminate\Support\Facades\Route;
@@ -19,6 +20,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('cases/{caseReference}/test-database', [CaseFileController::class, 'testDatabase'])
         ->name('cases.test-database');
 });
+
+// Debug API routes (only in debug mode)
+if (config('app.debug')) {
+    Route::get('api/debug/database-info', [DebugController::class, 'databaseInfo'])
+        ->middleware(['auth'])
+        ->name('debug.database-info');
+}
 
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';
