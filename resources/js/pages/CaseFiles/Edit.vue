@@ -13,7 +13,7 @@
                         </p>
                     </div>
                     <Button variant="outline" as-child>
-                        <Link :href="show.url({ case: caseReference.id })">
+                        <Link :href="caseReference?.id ? show.url({ case: caseReference.id }) : '#'">
                             <ArrowLeft class="mr-2 h-4 w-4" />
                             Zurück zum Fall
                         </Link>
@@ -142,7 +142,7 @@
                             <!-- Form Actions -->
                             <div class="flex items-center justify-between pt-6">
                                 <Button variant="outline" as-child>
-                                    <Link :href="show.url({ case: caseReference.id })">
+                                    <Link :href="caseReference?.id ? show.url({ case: caseReference.id }) : '#'">
                                         Abbrechen
                                     </Link>
                                 </Button>
@@ -182,6 +182,8 @@ console.log('Edit.vue - Props received:', {
     caseReference: props.caseReference
 })
 
+console.log('Edit.vue - caseReference ID:', props.caseReference?.id)
+
 const form = useForm({
     case_number: props.caseFile?.case_number || '',
     title: props.caseFile?.title || '',
@@ -189,6 +191,11 @@ const form = useForm({
 })
 
 const submitForm = () => {
+    if (!props.caseReference?.id) {
+        console.error('No case reference ID available for form submission')
+        return
+    }
+    console.log('Submitting form with case ID:', props.caseReference.id)
     form.put(update.url({ case: props.caseReference.id }))
 }
 
