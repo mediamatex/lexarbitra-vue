@@ -63,6 +63,7 @@ jobs:
           cat > deployment-package/.env << EOF
           APP_NAME="${{ secrets.APP_NAME }}"
           APP_ENV=production
+          APP_KEY=
           APP_DEBUG=true
           APP_URL="${{ secrets.APP_URL }}"
 
@@ -207,6 +208,10 @@ jobs:
             php artisan config:clear --no-interaction || true
             php artisan route:clear --no-interaction || true
 
+            # Verify the APP_KEY was generated
+            echo "APP_KEY check:"
+            grep "APP_KEY=" .env || echo "No APP_KEY found in .env"
+
             # Create storage symlink in both locations
             cd ${{ secrets.PROJECT_PATH }}
             ln -sf laravel/storage/app/public storage
@@ -257,6 +262,10 @@ jobs:
 
             # Clear and rebuild autoloader
             composer dump-autoloader --optimize --no-dev
+
+            # Verify APP_KEY is still set before caching
+            echo "Final APP_KEY check before caching:"
+            grep "APP_KEY=" .env || echo "No APP_KEY found in .env"
 
             # Cache configuration
             php artisan config:cache --no-interaction
