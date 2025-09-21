@@ -353,6 +353,7 @@ class CaseFileController extends Controller
             'case_number' => 'required|string',
             'title' => 'required|string|max:255',
             'status' => 'nullable|string',
+            'description' => 'nullable|string',
         ]);
 
         if (! $case->tenant_case_id) {
@@ -376,6 +377,7 @@ class CaseFileController extends Controller
                     'case_number' => $validated['case_number'],
                     'title' => $validated['title'],
                     'status' => $validated['status'],
+                    'description' => $validated['description'],
                     'updated_at' => now(),
                 ]);
 
