@@ -36,15 +36,17 @@ class CaseDatabaseService
             if (env('LOCAL_CASE_DB_TEST', false) && app()->environment('local')) {
                 // Use local SQLite for development/testing
                 $localService = new LocalCaseDatabaseService;
+                $safeComment = "Database for case " . str_replace('-', '_', $caseReference->id);
                 $databaseInfo = $localService->createLocalCaseDatabase(
                     $caseReference->id,
-                    "Database for case: {$caseReference->id}"
+                    $safeComment
                 );
             } else {
                 // Use KAS API for production MySQL databases
+                $safeComment = "Database for case " . str_replace('-', '_', $caseReference->id);
                 $databaseInfo = $this->kasApiService->createCaseDatabase(
                     "case_db_{$caseReference->id}",
-                    "Database for case: {$caseReference->id}"
+                    $safeComment
                 );
             }
 
@@ -313,17 +315,20 @@ class CaseDatabaseService
                         'encrypted_length' => strlen($caseReference->database_password),
                     ]);
                 } catch (\Exception $e) {
-                    // If decryption fails, assume it's already plain text (for local testing)
-                    $password = $caseReference->database_password;
-                    Log::warning('CaseDatabaseService::configureDatabaseConnection - Password decryption failed, using as plain text', [
+                    Log::error('CaseDatabaseService::configureDatabaseConnection - Password decryption failed', [
                         'error' => $e->getMessage(),
-                        'raw_password_length' => strlen($password),
+                        'case_reference_id' => $caseReference->id,
                     ]);
+
+                    // For production, if password decryption fails, we can't connect
+                    // This usually means the APP_KEY changed after the password was encrypted
+                    throw new \Exception("Cannot decrypt database password. This usually happens when the application encryption key (APP_KEY) changed after the case was created. Please refresh the database credentials using: php artisan case:refresh-database {$caseReference->id}");
                 }
             } else {
                 Log::warning('CaseDatabaseService::configureDatabaseConnection - No database password found', [
                     'case_reference_id' => $caseReference->id,
                 ]);
+                throw new \Exception("No database password found for case {$caseReference->id}");
             }
 
             $connectionConfig = [
