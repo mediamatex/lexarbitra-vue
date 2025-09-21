@@ -33,8 +33,11 @@ class CaseFileController extends Controller
 
                         if ($tenantCase) {
                             // Merge tenant data with reference info
+                            // IMPORTANT: Use case reference ID as the main ID for routing
                             $case = (object) array_merge((array) $tenantCase, [
-                                'reference_id' => $reference->id,
+                                'id' => $reference->id, // Case reference ID for routing
+                                'tenant_case_id' => $tenantCase->id, // Original tenant case ID
+                                'reference_id' => $reference->id, // Alias for clarity
                                 'database_name' => $reference->database_name,
                                 'connection_name' => $reference->connection_name,
                             ]);
@@ -350,7 +353,10 @@ class CaseFileController extends Controller
 
                     if ($tenantCase) {
                         // Merge tenant data with reference info
+                        // IMPORTANT: Use case reference ID as the main ID for routing
                         $caseFile = (object) array_merge((array) $tenantCase, [
+                            'id' => $case->id, // Case reference ID for routing
+                            'tenant_case_id' => $tenantCase->id, // Original tenant case ID
                             'reference_id' => $case->id,
                             'database_name' => $case->database_name,
                             'connection_name' => $case->connection_name,
@@ -467,7 +473,10 @@ class CaseFileController extends Controller
 
                     if ($tenantCase) {
                         // Merge tenant data with reference info for form submission
+                        // IMPORTANT: Use case reference ID as the main ID for routing
                         $caseFile = (object) array_merge((array) $tenantCase, [
+                            'id' => $case->id, // Case reference ID for routing
+                            'tenant_case_id' => $tenantCase->id, // Original tenant case ID
                             'reference_id' => $case->id, // For form submission
                             'database_name' => $case->database_name,
                             'connection_name' => $case->connection_name,
