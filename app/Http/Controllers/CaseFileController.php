@@ -54,22 +54,10 @@ class CaseFileController extends Controller
                 }
             }
 
-            // If no tenant data found or failed to load, create fallback case from reference
-            if (!$case) {
-                $case = (object) [
-                    'id' => $reference->id, // Case reference ID for routing
-                    'case_number' => 'CASE-' . substr($reference->id, 0, 8), // Generate fallback case number
-                    'title' => 'Unvollständiger Fall', // Placeholder title
-                    'status' => 'draft', // Default status
-                    'initiated_at' => $reference->created_at, // Use reference creation date
-                    'tenant_case_id' => $reference->tenant_case_id,
-                    'reference_id' => $reference->id,
-                    'database_name' => $reference->database_name,
-                    'is_incomplete' => true, // Flag to identify incomplete cases
-                ];
+            // Only add case to list if tenant data was successfully loaded
+            if ($case) {
+                $cases[] = $case;
             }
-
-            $cases[] = $case;
         }
 
         // Switch back to main database after processing all cases
