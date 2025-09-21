@@ -411,14 +411,33 @@ class CaseFileController extends Controller
         }
 
         if (! $caseFile) {
-            logger()->error('CaseFileController::show - About to abort with 404', [
+            logger()->warning('CaseFileController::show - No tenant data found, creating fallback case', [
                 'case_reference_id' => $case->id,
                 'tenant_case_id' => $case->tenant_case_id,
                 'has_tenant_case_id' => $case->tenant_case_id ? true : false,
                 'reason' => $case->tenant_case_id ? 'Tenant case not found or database unavailable' : 'No tenant_case_id set',
             ]);
 
-            abort(404, 'Case file not found or tenant database unavailable');
+            // Create fallback case object from reference data
+            $caseFile = (object) [
+                'id' => $case->id, // Case reference ID for routing
+                'case_number' => 'CASE-' . substr($case->id, 0, 8), // Generate fallback case number
+                'title' => 'Unvollständiger Fall', // Placeholder title
+                'description' => 'Diese Falldaten sind noch nicht vollständig konfiguriert.',
+                'status' => 'draft', // Default status
+                'initiated_at' => $case->created_at, // Use reference creation date
+                'created_at' => $case->created_at,
+                'updated_at' => $case->updated_at,
+                'tenant_case_id' => $case->tenant_case_id,
+                'reference_id' => $case->id,
+                'database_name' => $case->database_name,
+                'is_incomplete' => true, // Flag to identify incomplete cases
+            ];
+
+            logger()->info('CaseFileController::show - Created fallback case object', [
+                'case_reference_id' => $case->id,
+                'fallback_case_number' => $caseFile->case_number,
+            ]);
         }
 
         // Switch back to main database after reading tenant data
@@ -531,14 +550,33 @@ class CaseFileController extends Controller
         }
 
         if (! $caseFile) {
-            logger()->error('CaseFileController::edit - About to abort with 404', [
+            logger()->warning('CaseFileController::edit - No tenant data found, creating fallback case', [
                 'case_reference_id' => $case->id,
                 'tenant_case_id' => $case->tenant_case_id,
                 'has_tenant_case_id' => $case->tenant_case_id ? true : false,
                 'reason' => $case->tenant_case_id ? 'Tenant case not found or database unavailable' : 'No tenant_case_id set',
             ]);
 
-            abort(404, 'Case file not found or tenant database unavailable');
+            // Create fallback case object from reference data
+            $caseFile = (object) [
+                'id' => $case->id, // Case reference ID for routing
+                'case_number' => 'CASE-' . substr($case->id, 0, 8), // Generate fallback case number
+                'title' => 'Unvollständiger Fall', // Placeholder title
+                'description' => 'Diese Falldaten sind noch nicht vollständig konfiguriert.',
+                'status' => 'draft', // Default status
+                'initiated_at' => $case->created_at, // Use reference creation date
+                'created_at' => $case->created_at,
+                'updated_at' => $case->updated_at,
+                'tenant_case_id' => $case->tenant_case_id,
+                'reference_id' => $case->id,
+                'database_name' => $case->database_name,
+                'is_incomplete' => true, // Flag to identify incomplete cases
+            ];
+
+            logger()->info('CaseFileController::edit - Created fallback case object', [
+                'case_reference_id' => $case->id,
+                'fallback_case_number' => $caseFile->case_number,
+            ]);
         }
 
         // Switch back to main database after reading tenant data
@@ -564,7 +602,13 @@ class CaseFileController extends Controller
         ]);
 
         if (! $case->tenant_case_id) {
-            abort(404, 'Case file not found or tenant database unavailable');
+            logger()->info('CaseFileController::update - No tenant_case_id, cannot update tenant data', [
+                'case_reference_id' => $case->id,
+                'database_name' => $case->database_name,
+            ]);
+
+            return redirect()->route('cases.show', $case)
+                ->with('error', 'Dieser Fall hat noch keine vollständigen Daten und kann nicht bearbeitet werden.');
         }
 
         $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
