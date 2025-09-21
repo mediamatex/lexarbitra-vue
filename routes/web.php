@@ -17,7 +17,7 @@ Route::get('dashboard', function () {
 // Case management routes
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('cases', CaseFileController::class)->parameters(['case' => 'caseReference']);
-    Route::post('cases/{caseReference}/test-database', [CaseFileController::class, 'testDatabase'])
+    Route::post('cases/{case}/test-database', [CaseFileController::class, 'testDatabase'])
         ->name('cases.test-database');
 });
 
