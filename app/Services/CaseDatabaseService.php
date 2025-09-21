@@ -273,6 +273,9 @@ class CaseDatabaseService
             'local_test_env_var' => env('LOCAL_CASE_DB_TEST', false),
             'host_contains_sqlite' => str_contains($host, '.sqlite'),
             'host' => $host,
+            'database_user' => $caseReference->database_user,
+            'has_password' => !empty($caseReference->database_password),
+            'connection_will_be' => $isLocalSqlite ? 'SQLite' : 'MySQL',
         ]);
 
         if ($isLocalSqlite) {

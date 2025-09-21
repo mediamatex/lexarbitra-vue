@@ -16,11 +16,28 @@ class CaseFileController extends Controller
 
     public function index(): Response
     {
+        logger()->info('CaseFileController::index - Start', [
+            'environment' => app()->environment(),
+            'user_id' => auth()->id(),
+        ]);
+
         $caseReferences = CaseReference::latest()->paginate(15);
+
+        logger()->info('CaseFileController::index - Found case references', [
+            'total_references' => $caseReferences->total(),
+            'current_page_count' => $caseReferences->count(),
+        ]);
 
         // Load case data from tenant databases
         $cases = [];
         foreach ($caseReferences as $reference) {
+            logger()->info('CaseFileController::index - Processing case reference', [
+                'case_reference_id' => $reference->id,
+                'tenant_case_id' => $reference->tenant_case_id,
+                'database_name' => $reference->database_name,
+                'database_host' => $reference->database_host,
+                'has_tenant_case_id' => $reference->tenant_case_id ? true : false,
+            ]);
             $case = null;
 
             if ($reference->tenant_case_id) {
@@ -57,8 +74,23 @@ class CaseFileController extends Controller
             // Only add case to list if tenant data was successfully loaded
             if ($case) {
                 $cases[] = $case;
+                logger()->info('CaseFileController::index - Successfully added case to final list', [
+                    'case_reference_id' => $reference->id,
+                    'case_title' => $case->title ?? 'No title',
+                ]);
+            } else {
+                logger()->warning('CaseFileController::index - Case not added to final list', [
+                    'case_reference_id' => $reference->id,
+                    'tenant_case_id' => $reference->tenant_case_id,
+                    'reason' => $reference->tenant_case_id ? 'Failed to load tenant data' : 'No tenant_case_id',
+                ]);
             }
         }
+
+        logger()->info('CaseFileController::index - Final result', [
+            'total_cases_in_list' => count($cases),
+            'total_references_processed' => $caseReferences->count(),
+        ]);
 
         // Switch back to main database after processing all cases
         $this->caseDatabaseService->switchBackToMainDatabase();
