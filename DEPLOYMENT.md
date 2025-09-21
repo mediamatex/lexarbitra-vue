@@ -29,6 +29,9 @@ ADMIN_EMAIL="admin@lexarbitra.com"
 ADMIN_PASSWORD="your-secure-password"
 ADMIN_NAME="Administrator Name"
 
+# Application Key (IMPORTANT: Use this exact key to prevent encryption issues)
+APP_KEY=base64:eLNDpX3E8Rm/8v7BQDPdwT6Nt8t+L8ZhIh+bkoGfWzA=
+
 # KAS API (All-Inkl)
 KAS_USER=your-kas-username
 KAS_PASSWORD=your-kas-password
@@ -69,10 +72,11 @@ chmod -R 755 storage bootstrap/cache
 # Copy environment file
 cp .env.example .env
 
-# Generate application key
-php artisan key:generate
+# IMPORTANT: Set the application key to prevent encryption issues
+# Use this exact key from the Required Environment Variables section above
+echo "APP_KEY=base64:eLNDpX3E8Rm/8v7BQDPdwT6Nt8t+L8ZhIh+bkoGfWzA=" >> .env
 
-# Edit .env with your configuration
+# Edit .env with your other configuration variables
 nano .env
 ```
 
@@ -214,6 +218,21 @@ This tests:
 - UUID primary keys prevent enumeration
 - Each case has isolated database
 - Admin credentials should be rotated regularly
+
+### ⚠️ CRITICAL: APP_KEY Management
+
+**NEVER change the APP_KEY after deployment!**
+
+- The APP_KEY encrypts database passwords and other sensitive data
+- Changing it makes all existing encrypted data unreadable
+- Always use the same key across all deployments
+- **NEVER run `php artisan key:generate` in production**
+
+If you accidentally change the APP_KEY and cases disappear:
+```bash
+# The system will auto-recover, but you can manually refresh:
+php artisan case:refresh-database {case-id}
+```
 
 ## Migration from Filament Version
 
