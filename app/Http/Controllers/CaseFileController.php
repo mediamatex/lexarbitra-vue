@@ -16,11 +16,11 @@ class CaseFileController extends Controller
 
     public function index(): Response
     {
-        $cases = CaseReference::latest()->paginate(15);
+        $caseReferences = CaseReference::latest()->paginate(15);
 
         // Load case data from tenant databases
         $cases = [];
-        foreach ($cases as $reference) {
+        foreach ($caseReferences as $reference) {
             if ($reference->tenant_case_id) {
                 $connectionName = $this->caseDatabaseService->switchToCaseDatabase($reference);
 
@@ -56,10 +56,10 @@ class CaseFileController extends Controller
         return Inertia::render('CaseFiles/Index', [
             'cases' => [
                 'data' => $cases,
-                'current_page' => $cases->currentPage(),
-                'last_page' => $cases->lastPage(),
-                'per_page' => $cases->perPage(),
-                'total' => $cases->total(),
+                'current_page' => $caseReferences->currentPage(),
+                'last_page' => $caseReferences->lastPage(),
+                'per_page' => $caseReferences->perPage(),
+                'total' => $caseReferences->total(),
             ],
         ]);
     }
