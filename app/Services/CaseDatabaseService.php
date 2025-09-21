@@ -315,14 +315,32 @@ class CaseDatabaseService
                         'encrypted_length' => strlen($caseReference->database_password),
                     ]);
                 } catch (\Exception $e) {
-                    Log::error('CaseDatabaseService::configureDatabaseConnection - Password decryption failed', [
+                    Log::warning('CaseDatabaseService::configureDatabaseConnection - Password decryption failed, attempting auto-refresh', [
                         'error' => $e->getMessage(),
                         'case_reference_id' => $caseReference->id,
                     ]);
 
-                    // For production, if password decryption fails, we can't connect
-                    // This usually means the APP_KEY changed after the password was encrypted
-                    throw new \Exception("Cannot decrypt database password. This usually happens when the application encryption key (APP_KEY) changed after the case was created. Please refresh the database credentials using: php artisan case:refresh-database {$caseReference->id}");
+                    // Auto-refresh the database credentials if decryption fails
+                    // This handles APP_KEY changes automatically
+                    try {
+                        $this->autoRefreshCaseDatabase($caseReference);
+
+                        // Reload the case reference to get fresh credentials
+                        $caseReference->refresh();
+                        $password = decrypt($caseReference->database_password);
+
+                        Log::info('CaseDatabaseService::configureDatabaseConnection - Auto-refresh successful', [
+                            'case_reference_id' => $caseReference->id,
+                        ]);
+                    } catch (\Exception $refreshException) {
+                        Log::error('CaseDatabaseService::configureDatabaseConnection - Auto-refresh failed', [
+                            'case_reference_id' => $caseReference->id,
+                            'refresh_error' => $refreshException->getMessage(),
+                        ]);
+
+                        // If auto-refresh fails, throw the original decryption error
+                        throw new \Exception("Cannot decrypt database password and auto-refresh failed. Please manually refresh: php artisan case:refresh-database {$caseReference->id}. Error: {$refreshException->getMessage()}");
+                    }
                 }
             } else {
                 Log::warning('CaseDatabaseService::configureDatabaseConnection - No database password found', [
@@ -388,6 +406,71 @@ class CaseDatabaseService
     private function generateConnectionName(string $caseFileId): string
     {
         return 'case_'.str_replace('-', '_', $caseFileId);
+    }
+
+    private function autoRefreshCaseDatabase(CaseReference $caseReference): void
+    {
+        Log::info('CaseDatabaseService::autoRefreshCaseDatabase - Starting auto-refresh', [
+            'case_reference_id' => $caseReference->id,
+            'database_name' => $caseReference->database_name,
+        ]);
+
+        // Only auto-refresh for production MySQL databases, not local SQLite
+        if (env('LOCAL_CASE_DB_TEST', false) && app()->environment('local')) {
+            throw new \Exception('Auto-refresh not supported for local SQLite databases');
+        }
+
+        // Delete and recreate the database via KAS API
+        $this->kasApiService->deleteCaseDatabase($caseReference->database_name);
+
+        $safeComment = "Auto-refreshed database for case " . str_replace('-', '_', $caseReference->id);
+        $databaseInfo = $this->kasApiService->createCaseDatabase(
+            $caseReference->database_name,
+            $safeComment
+        );
+
+        if (!$databaseInfo['success']) {
+            throw new \Exception('Failed to recreate database: ' . ($databaseInfo['error'] ?? 'Unknown error'));
+        }
+
+        // Update case reference with new credentials
+        $password = $databaseInfo['database_password'];
+        if (!empty($password)) {
+            $password = encrypt($password);
+        }
+
+        $caseReference->update([
+            'database_user' => $databaseInfo['database_user'],
+            'database_password' => $password,
+            'database_host' => $databaseInfo['database_host'],
+        ]);
+
+        Log::info('CaseDatabaseService::autoRefreshCaseDatabase - Successfully refreshed credentials', [
+            'case_reference_id' => $caseReference->id,
+            'new_user' => $databaseInfo['database_user'],
+        ]);
+
+        // Configure and test the new connection
+        $this->configureDatabaseConnection($caseReference);
+
+        // Run migrations on the refreshed database
+        try {
+            \Artisan::call('migrate', [
+                '--database' => $caseReference->connection_name,
+                '--force' => true,
+                '--path' => 'database/migrations/tenant',
+            ]);
+
+            Log::info('CaseDatabaseService::autoRefreshCaseDatabase - Migrations completed', [
+                'case_reference_id' => $caseReference->id,
+            ]);
+        } catch (\Exception $e) {
+            Log::warning('CaseDatabaseService::autoRefreshCaseDatabase - Migration failed', [
+                'case_reference_id' => $caseReference->id,
+                'error' => $e->getMessage(),
+            ]);
+            // Don't fail the entire refresh just because migrations failed
+        }
     }
 
     public function testCaseDatabase(CaseReference $caseReference): array
