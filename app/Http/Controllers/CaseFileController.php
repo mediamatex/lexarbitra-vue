@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\CaseReference;
 use App\Services\CaseDatabaseService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CaseFileController extends Controller
 {
+    use AuthorizesRequests;
     public function __construct(
         private CaseDatabaseService $caseDatabaseService
     ) {
