@@ -28,4 +28,34 @@ class CaseReference extends Model
     {
         return 'case_'.str_replace('-', '_', $this->id);
     }
+
+    public function resolveRouteBinding($value, $field = null)
+    {
+        logger()->info('CaseReference::resolveRouteBinding - Start', [
+            'value' => $value,
+            'field' => $field,
+            'url' => request()->url(),
+            'method' => request()->method(),
+        ]);
+
+        $caseReference = $this->where($field ?? $this->getRouteKeyName(), $value)->first();
+
+        if ($caseReference) {
+            logger()->info('CaseReference::resolveRouteBinding - Found case reference', [
+                'case_reference_id' => $caseReference->id,
+                'tenant_case_id' => $caseReference->tenant_case_id,
+                'database_name' => $caseReference->database_name,
+                'is_active' => $caseReference->is_active,
+                'lookup_value' => $value,
+            ]);
+        } else {
+            logger()->warning('CaseReference::resolveRouteBinding - Case reference not found', [
+                'lookup_value' => $value,
+                'field' => $field ?? $this->getRouteKeyName(),
+                'url' => request()->url(),
+            ]);
+        }
+
+        return $caseReference;
+    }
 }

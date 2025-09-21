@@ -165,29 +165,57 @@ class CaseDatabaseService
 
     public function switchToCaseDatabase(CaseReference $caseReference): ?string
     {
+        Log::info('CaseDatabaseService::switchToCaseDatabase - Start', [
+            'case_reference_id' => $caseReference->id,
+            'database_name' => $caseReference->database_name,
+            'database_host' => $caseReference->database_host,
+            'connection_name' => $caseReference->connection_name,
+            'is_active' => $caseReference->is_active,
+        ]);
+
         if (! $caseReference) {
+            Log::warning('CaseDatabaseService::switchToCaseDatabase - No case reference provided');
+
             return null;
         }
 
-        // Ensure the connection is configured
-        $this->configureDatabaseConnection($caseReference);
+        try {
+            // Ensure the connection is configured
+            $this->configureDatabaseConnection($caseReference);
 
-        // Store the original default connection
-        $originalConnection = Config::get('database.default');
+            // Store the original default connection
+            $originalConnection = Config::get('database.default');
 
-        // Switch to the tenant database as the default connection
-        Config::set('database.default', $caseReference->connection_name);
+            Log::info('CaseDatabaseService::switchToCaseDatabase - About to switch connections', [
+                'from' => $originalConnection,
+                'to' => $caseReference->connection_name,
+                'case_reference_id' => $caseReference->id,
+            ]);
 
-        // Clear any cached connections to ensure we use the new default
-        $this->databaseManager->purge();
+            // Switch to the tenant database as the default connection
+            Config::set('database.default', $caseReference->connection_name);
 
-        Log::info('Switched database connection', [
-            'from' => $originalConnection,
-            'to' => $caseReference->connection_name,
-            'case_reference_id' => $caseReference->id,
-        ]);
+            // Clear any cached connections to ensure we use the new default
+            $this->databaseManager->purge();
 
-        return $caseReference->connection_name;
+            Log::info('CaseDatabaseService::switchToCaseDatabase - Successfully switched database connection', [
+                'from' => $originalConnection,
+                'to' => $caseReference->connection_name,
+                'case_reference_id' => $caseReference->id,
+            ]);
+
+            return $caseReference->connection_name;
+
+        } catch (\Exception $e) {
+            Log::error('CaseDatabaseService::switchToCaseDatabase - Failed to switch database', [
+                'case_reference_id' => $caseReference->id,
+                'connection_name' => $caseReference->connection_name,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return null;
+        }
     }
 
     public function switchBackToMainDatabase(): void
@@ -209,12 +237,35 @@ class CaseDatabaseService
         $connectionName = $caseReference->connection_name;
         $host = $caseReference->database_host;
 
+        Log::info('CaseDatabaseService::configureDatabaseConnection - Start', [
+            'case_reference_id' => $caseReference->id,
+            'connection_name' => $connectionName,
+            'host' => $host,
+            'database_name' => $caseReference->database_name,
+            'environment' => app()->environment(),
+            'local_test_enabled' => env('LOCAL_CASE_DB_TEST', false),
+        ]);
+
         // Determine database type based on environment and host format
         $isLocalSqlite = env('LOCAL_CASE_DB_TEST', false) &&
                         app()->environment('local') &&
                         str_contains($host, '.sqlite');
 
+        Log::info('CaseDatabaseService::configureDatabaseConnection - Database type detection', [
+            'is_local_sqlite' => $isLocalSqlite,
+            'environment' => app()->environment(),
+            'local_test_env_var' => env('LOCAL_CASE_DB_TEST', false),
+            'host_contains_sqlite' => str_contains($host, '.sqlite'),
+            'host' => $host,
+        ]);
+
         if ($isLocalSqlite) {
+            Log::info('CaseDatabaseService::configureDatabaseConnection - Configuring SQLite connection', [
+                'connection_name' => $connectionName,
+                'database_file' => $host,
+                'file_exists' => file_exists($host),
+            ]);
+
             // Configure SQLite connection for local testing
             Config::set("database.connections.{$connectionName}", [
                 'driver' => 'sqlite',
@@ -223,6 +274,14 @@ class CaseDatabaseService
                 'foreign_key_constraints' => true,
             ]);
         } else {
+            Log::info('CaseDatabaseService::configureDatabaseConnection - Configuring MySQL connection', [
+                'connection_name' => $connectionName,
+                'host' => $host,
+                'database_name' => $caseReference->database_name,
+                'database_user' => $caseReference->database_user,
+                'has_password' => ! empty($caseReference->database_password),
+            ]);
+
             // Use MySQL connection config for case databases (production via KAS API)
             $mysqlConfig = config('database.connections.mysql');
 
@@ -230,9 +289,13 @@ class CaseDatabaseService
             if ($caseReference->database_password) {
                 try {
                     $password = decrypt($caseReference->database_password);
+                    Log::info('CaseDatabaseService::configureDatabaseConnection - Password decrypted successfully');
                 } catch (\Exception $e) {
                     // If decryption fails, assume it's already plain text (for local testing)
                     $password = $caseReference->database_password;
+                    Log::warning('CaseDatabaseService::configureDatabaseConnection - Password decryption failed, using as plain text', [
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
 
@@ -258,7 +321,7 @@ class CaseDatabaseService
         $this->databaseManager->purge($connectionName);
 
         $connectionType = $isLocalSqlite ? 'sqlite' : 'mysql';
-        Log::info('Database connection configured', [
+        Log::info('CaseDatabaseService::configureDatabaseConnection - Database connection configured successfully', [
             'connection_name' => $connectionName,
             'connection_type' => $connectionType,
             'host' => $host,

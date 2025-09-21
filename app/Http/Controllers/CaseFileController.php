@@ -135,7 +135,7 @@ class CaseFileController extends Controller
                     } catch (\Exception $e) {
                         logger()->warning('Could not list tables after migration', [
                             'connection_name' => $connectionName,
-                            'error' => $e->getMessage()
+                            'error' => $e->getMessage(),
                         ]);
                     }
 
@@ -295,17 +295,58 @@ class CaseFileController extends Controller
 
     public function show(CaseReference $caseReference): Response
     {
+        logger()->info('CaseFileController::show - Start', [
+            'case_reference_id' => $caseReference->id,
+            'url' => request()->url(),
+            'method' => request()->method(),
+            'user_id' => auth()->id(),
+        ]);
+
+        logger()->info('CaseFileController::show - Case reference details', [
+            'case_reference_id' => $caseReference->id,
+            'tenant_case_id' => $caseReference->tenant_case_id,
+            'database_name' => $caseReference->database_name,
+            'database_host' => $caseReference->database_host,
+            'connection_name' => $caseReference->connection_name,
+            'is_active' => $caseReference->is_active,
+        ]);
+
         $caseFile = null;
 
         if ($caseReference->tenant_case_id) {
+            logger()->info('CaseFileController::show - Has tenant_case_id, attempting to load tenant data', [
+                'case_reference_id' => $caseReference->id,
+                'tenant_case_id' => $caseReference->tenant_case_id,
+            ]);
+
             $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+
+            logger()->info('CaseFileController::show - Database switch result', [
+                'case_reference_id' => $caseReference->id,
+                'connection_name' => $connectionName,
+                'success' => $connectionName ? true : false,
+            ]);
 
             if ($connectionName) {
                 try {
+                    logger()->info('CaseFileController::show - Attempting to query tenant database', [
+                        'case_reference_id' => $caseReference->id,
+                        'connection_name' => $connectionName,
+                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'database_host' => $caseReference->database_host,
+                        'file_exists' => file_exists($caseReference->database_host),
+                    ]);
+
                     $tenantCase = \DB::connection($connectionName)
                         ->table('case_files')
                         ->where('id', $caseReference->tenant_case_id)
                         ->first();
+
+                    logger()->info('CaseFileController::show - Tenant query result', [
+                        'case_reference_id' => $caseReference->id,
+                        'tenant_case_found' => $tenantCase ? true : false,
+                        'tenant_case_data' => $tenantCase ? (array) $tenantCase : null,
+                    ]);
 
                     if ($tenantCase) {
                         // Merge tenant data with reference info
@@ -314,23 +355,54 @@ class CaseFileController extends Controller
                             'database_name' => $caseReference->database_name,
                             'connection_name' => $caseReference->connection_name,
                         ]);
+
+                        logger()->info('CaseFileController::show - Case file object created successfully', [
+                            'case_reference_id' => $caseReference->id,
+                            'case_file_title' => $caseFile->title ?? 'No title',
+                        ]);
                     }
                 } catch (\Exception $e) {
-                    logger()->error('Failed to load tenant case data', [
+                    logger()->error('CaseFileController::show - Failed to load tenant case data', [
                         'case_reference_id' => $caseReference->id,
                         'tenant_case_id' => $caseReference->tenant_case_id,
+                        'connection_name' => $connectionName,
                         'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
                     ]);
                 }
+            } else {
+                logger()->warning('CaseFileController::show - Database switch failed', [
+                    'case_reference_id' => $caseReference->id,
+                    'database_name' => $caseReference->database_name,
+                    'database_host' => $caseReference->database_host,
+                ]);
             }
+        } else {
+            logger()->warning('CaseFileController::show - No tenant_case_id found', [
+                'case_reference_id' => $caseReference->id,
+                'database_name' => $caseReference->database_name,
+                'created_at' => $caseReference->created_at,
+            ]);
         }
 
         if (! $caseFile) {
+            logger()->error('CaseFileController::show - About to abort with 404', [
+                'case_reference_id' => $caseReference->id,
+                'tenant_case_id' => $caseReference->tenant_case_id,
+                'has_tenant_case_id' => $caseReference->tenant_case_id ? true : false,
+                'reason' => $caseReference->tenant_case_id ? 'Tenant case not found or database unavailable' : 'No tenant_case_id set',
+            ]);
+
             abort(404, 'Case file not found or tenant database unavailable');
         }
 
         // Switch back to main database after reading tenant data
         $this->caseDatabaseService->switchBackToMainDatabase();
+
+        logger()->info('CaseFileController::show - Successfully returning case file view', [
+            'case_reference_id' => $caseReference->id,
+            'case_file_title' => $caseFile->title ?? 'No title',
+        ]);
 
         return Inertia::render('CaseFiles/Show', [
             'caseFile' => $caseFile,
@@ -340,17 +412,58 @@ class CaseFileController extends Controller
 
     public function edit(CaseReference $caseReference): Response
     {
+        logger()->info('CaseFileController::edit - Start', [
+            'case_reference_id' => $caseReference->id,
+            'url' => request()->url(),
+            'method' => request()->method(),
+            'user_id' => auth()->id(),
+        ]);
+
+        logger()->info('CaseFileController::edit - Case reference details', [
+            'case_reference_id' => $caseReference->id,
+            'tenant_case_id' => $caseReference->tenant_case_id,
+            'database_name' => $caseReference->database_name,
+            'database_host' => $caseReference->database_host,
+            'connection_name' => $caseReference->connection_name,
+            'is_active' => $caseReference->is_active,
+        ]);
+
         $caseFile = null;
 
         if ($caseReference->tenant_case_id) {
+            logger()->info('CaseFileController::edit - Has tenant_case_id, attempting to load tenant data', [
+                'case_reference_id' => $caseReference->id,
+                'tenant_case_id' => $caseReference->tenant_case_id,
+            ]);
+
             $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+
+            logger()->info('CaseFileController::edit - Database switch result', [
+                'case_reference_id' => $caseReference->id,
+                'connection_name' => $connectionName,
+                'success' => $connectionName ? true : false,
+            ]);
 
             if ($connectionName) {
                 try {
+                    logger()->info('CaseFileController::edit - Attempting to query tenant database', [
+                        'case_reference_id' => $caseReference->id,
+                        'connection_name' => $connectionName,
+                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'database_host' => $caseReference->database_host,
+                        'file_exists' => file_exists($caseReference->database_host),
+                    ]);
+
                     $tenantCase = \DB::connection($connectionName)
                         ->table('case_files')
                         ->where('id', $caseReference->tenant_case_id)
                         ->first();
+
+                    logger()->info('CaseFileController::edit - Tenant query result', [
+                        'case_reference_id' => $caseReference->id,
+                        'tenant_case_found' => $tenantCase ? true : false,
+                        'tenant_case_data' => $tenantCase ? (array) $tenantCase : null,
+                    ]);
 
                     if ($tenantCase) {
                         // Merge tenant data with reference info for form submission
@@ -359,23 +472,54 @@ class CaseFileController extends Controller
                             'database_name' => $caseReference->database_name,
                             'connection_name' => $caseReference->connection_name,
                         ]);
+
+                        logger()->info('CaseFileController::edit - Case file object created successfully', [
+                            'case_reference_id' => $caseReference->id,
+                            'case_file_title' => $caseFile->title ?? 'No title',
+                        ]);
                     }
                 } catch (\Exception $e) {
-                    logger()->error('Failed to load tenant case data for editing', [
+                    logger()->error('CaseFileController::edit - Failed to load tenant case data for editing', [
                         'case_reference_id' => $caseReference->id,
                         'tenant_case_id' => $caseReference->tenant_case_id,
+                        'connection_name' => $connectionName,
                         'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
                     ]);
                 }
+            } else {
+                logger()->warning('CaseFileController::edit - Database switch failed', [
+                    'case_reference_id' => $caseReference->id,
+                    'database_name' => $caseReference->database_name,
+                    'database_host' => $caseReference->database_host,
+                ]);
             }
+        } else {
+            logger()->warning('CaseFileController::edit - No tenant_case_id found', [
+                'case_reference_id' => $caseReference->id,
+                'database_name' => $caseReference->database_name,
+                'created_at' => $caseReference->created_at,
+            ]);
         }
 
         if (! $caseFile) {
+            logger()->error('CaseFileController::edit - About to abort with 404', [
+                'case_reference_id' => $caseReference->id,
+                'tenant_case_id' => $caseReference->tenant_case_id,
+                'has_tenant_case_id' => $caseReference->tenant_case_id ? true : false,
+                'reason' => $caseReference->tenant_case_id ? 'Tenant case not found or database unavailable' : 'No tenant_case_id set',
+            ]);
+
             abort(404, 'Case file not found or tenant database unavailable');
         }
 
         // Switch back to main database after reading tenant data
         $this->caseDatabaseService->switchBackToMainDatabase();
+
+        logger()->info('CaseFileController::edit - Successfully returning case file edit view', [
+            'case_reference_id' => $caseReference->id,
+            'case_file_title' => $caseFile->title ?? 'No title',
+        ]);
 
         return Inertia::render('CaseFiles/Edit', [
             'caseFile' => $caseFile,
