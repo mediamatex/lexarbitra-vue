@@ -52,7 +52,7 @@ class RefreshCaseDatabase extends Command
 
                 // Create new database with safe comment (no special characters)
                 $this->info("Creating new database...");
-                $safeComment = "Refreshed database for case " . str_replace('-', '_', $case->id);
+                $safeComment = "Database_for_case_" . str_replace('-', '_', $case->id);
                 $databaseInfo = $kasService->createCaseDatabase(
                     $case->database_name,
                     $safeComment

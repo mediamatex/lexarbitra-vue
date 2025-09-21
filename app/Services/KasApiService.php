@@ -31,7 +31,7 @@ class KasApiService
 
         $databaseName = $this->generateDatabaseName($caseFileId);
         $databasePassword = $this->generateSecurePassword();
-        $databaseComment = $comment ?? "Database for case: {$caseFileId}";
+        $databaseComment = $comment ?? "Database_for_case_" . str_replace('-', '_', $caseFileId);
 
         try {
             $response = $this->callKasApi('add_database', [

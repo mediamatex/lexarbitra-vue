@@ -423,7 +423,7 @@ class CaseDatabaseService
         // Delete and recreate the database via KAS API
         $this->kasApiService->deleteCaseDatabase($caseReference->database_name);
 
-        $safeComment = "Auto-refreshed database for case " . str_replace('-', '_', $caseReference->id);
+        $safeComment = "Database_for_case_" . str_replace('-', '_', $caseReference->id);
         $databaseInfo = $this->kasApiService->createCaseDatabase(
             $caseReference->database_name,
             $safeComment
