@@ -13,15 +13,14 @@ class CaseFileController extends Controller
     public function __construct(
         private CaseDatabaseService $caseDatabaseService
     ) {
-        // Apply authorization middleware to all methods
-        $this->middleware('auth');
-
-        // Apply specific authorization policies
-        $this->authorizeResource(CaseReference::class, 'case');
+        // Authorization is handled by route middleware and policies
     }
 
     public function index(): Response
     {
+        // Check authorization for viewing any cases
+        $this->authorize('viewAny', CaseReference::class);
+
         // Only show cases where user is a participant (unless super admin)
         if (auth()->user()->is_super_admin) {
             $caseReferences = CaseReference::latest()->paginate(15);
@@ -88,11 +87,17 @@ class CaseFileController extends Controller
 
     public function create(): Response
     {
+        // Check authorization for creating cases
+        $this->authorize('create', CaseReference::class);
+
         return Inertia::render('CaseFiles/Create');
     }
 
     public function store(Request $request)
     {
+        // Check authorization for creating cases
+        $this->authorize('create', CaseReference::class);
+
         $validated = $request->validate([
             'case_number' => 'required|string',
             'title' => 'required|string|max:255',
@@ -209,6 +214,9 @@ class CaseFileController extends Controller
 
     public function show(CaseReference $case): Response
     {
+        // Check authorization for viewing this specific case
+        $this->authorize('view', $case);
+
         $caseFile = null;
 
         if ($case->tenant_case_id) {
@@ -253,6 +261,9 @@ class CaseFileController extends Controller
 
     public function edit(CaseReference $case): Response
     {
+        // Check authorization for editing this specific case
+        $this->authorize('update', $case);
+
         $caseFile = null;
 
         if ($case->tenant_case_id) {
@@ -297,6 +308,9 @@ class CaseFileController extends Controller
 
     public function update(Request $request, CaseReference $case)
     {
+        // Check authorization for updating this specific case
+        $this->authorize('update', $case);
+
         $validated = $request->validate([
             'case_number' => 'required|string',
             'title' => 'required|string|max:255',
@@ -349,6 +363,9 @@ class CaseFileController extends Controller
 
     public function destroy(CaseReference $case)
     {
+        // Check authorization for deleting this specific case
+        $this->authorize('delete', $case);
+
         // Delete case database
         try {
             $this->caseDatabaseService->deleteCaseDatabase($case);
