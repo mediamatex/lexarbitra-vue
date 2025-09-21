@@ -12,11 +12,26 @@ class CaseFileController extends Controller
 {
     public function __construct(
         private CaseDatabaseService $caseDatabaseService
-    ) {}
+    ) {
+        // Apply authorization middleware to all methods
+        $this->middleware('auth');
+
+        // Apply specific authorization policies
+        $this->authorizeResource(CaseReference::class, 'case');
+    }
 
     public function index(): Response
     {
-        $caseReferences = CaseReference::latest()->paginate(15);
+        // Only show cases where user is a participant (unless super admin)
+        if (auth()->user()->is_super_admin) {
+            $caseReferences = CaseReference::latest()->paginate(15);
+        } else {
+            // Filter to only cases where user is a participant
+            $caseReferences = CaseReference::whereHas('participants', function ($query) {
+                $query->where('user_id', auth()->id())
+                      ->active();
+            })->latest()->paginate(15);
+        }
 
         // Load case data from tenant databases
         $cases = [];
@@ -150,6 +165,14 @@ class CaseFileController extends Controller
 
                     // Update the case reference with tenant case ID
                     $case->update(['tenant_case_id' => $tenantCaseId]);
+
+                    // Add the creator as the primary referee for this case
+                    $case->addParticipant(
+                        auth()->user(),
+                        \App\Models\CaseParticipant::ROLE_REFEREE,
+                        true, // is_primary
+                        'Case creator - automatically assigned as primary referee'
+                    );
 
                     // Return the case reference
                     $caseFile = $case;
