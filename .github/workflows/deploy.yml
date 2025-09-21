@@ -63,7 +63,7 @@ jobs:
           cat > deployment-package/.env << EOF
           APP_NAME="${{ secrets.APP_NAME }}"
           APP_ENV=production
-          APP_KEY=
+          APP_KEY=base64:eLNDpX3E8Rm/8v7BQDPdwT6Nt8t+L8ZhIh+bkoGfWzA=
           APP_DEBUG=true
           APP_URL="${{ secrets.APP_URL }}"
 
@@ -130,6 +130,9 @@ jobs:
           KAS_PASSWORD="${{ secrets.KAS_PASSWORD }}"
           KAS_API_URL=https://kasapi.kasserver.com/soap/
           KAS_WSDL_URL=https://kasapi.kasserver.com/soap/api.wsdl
+
+          # CRITICAL: Use KAS API for case databases (not local SQLite)
+          LOCAL_CASE_DB_TEST=false
           EOF
 
       - name: Setup SSH key
@@ -207,8 +210,9 @@ jobs:
               echo "Created empty Vite manifest for compatibility"
             fi
 
-            # Generate application key if not exists
-            php artisan key:generate --force --no-interaction
+            # CRITICAL: Don't generate new APP_KEY! It breaks encrypted database passwords
+            # The APP_KEY is set in the .env file and must remain consistent
+            echo "✅ Using consistent APP_KEY to preserve encrypted database passwords"
 
             # Clear configuration only (don't clear database cache before migrations)
             php artisan config:clear --no-interaction || true
