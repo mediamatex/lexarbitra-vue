@@ -308,17 +308,25 @@ class CaseDatabaseService
             if ($caseReference->database_password) {
                 try {
                     $password = decrypt($caseReference->database_password);
-                    Log::info('CaseDatabaseService::configureDatabaseConnection - Password decrypted successfully');
+                    Log::info('CaseDatabaseService::configureDatabaseConnection - Password decrypted successfully', [
+                        'password_length' => strlen($password),
+                        'encrypted_length' => strlen($caseReference->database_password),
+                    ]);
                 } catch (\Exception $e) {
                     // If decryption fails, assume it's already plain text (for local testing)
                     $password = $caseReference->database_password;
                     Log::warning('CaseDatabaseService::configureDatabaseConnection - Password decryption failed, using as plain text', [
                         'error' => $e->getMessage(),
+                        'raw_password_length' => strlen($password),
                     ]);
                 }
+            } else {
+                Log::warning('CaseDatabaseService::configureDatabaseConnection - No database password found', [
+                    'case_reference_id' => $caseReference->id,
+                ]);
             }
 
-            Config::set("database.connections.{$connectionName}", [
+            $connectionConfig = [
                 'driver' => 'mysql',
                 'host' => $host,
                 'port' => $mysqlConfig['port'] ?? 3306,
@@ -333,7 +341,19 @@ class CaseDatabaseService
                 'strict' => true,
                 'engine' => null,
                 'options' => $mysqlConfig['options'] ?? [],
+            ];
+
+            Log::info('CaseDatabaseService::configureDatabaseConnection - Setting MySQL connection config', [
+                'connection_name' => $connectionName,
+                'host' => $host,
+                'port' => $connectionConfig['port'],
+                'database' => $caseReference->database_name,
+                'username' => $caseReference->database_user,
+                'password_set' => !empty($password),
+                'password_length' => strlen($password),
             ]);
+
+            Config::set("database.connections.{$connectionName}", $connectionConfig);
         }
 
         // Clear any cached connections
