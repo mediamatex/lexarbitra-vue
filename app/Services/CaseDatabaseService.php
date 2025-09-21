@@ -183,6 +183,22 @@ class CaseDatabaseService
             // Ensure the connection is configured
             $this->configureDatabaseConnection($caseReference);
 
+            // Test the connection immediately after configuration
+            try {
+                \DB::connection($caseReference->connection_name)->getPdo();
+                Log::info('CaseDatabaseService::switchToCaseDatabase - Database connection test successful', [
+                    'connection_name' => $caseReference->connection_name,
+                    'case_reference_id' => $caseReference->id,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('CaseDatabaseService::switchToCaseDatabase - Database connection test failed', [
+                    'connection_name' => $caseReference->connection_name,
+                    'case_reference_id' => $caseReference->id,
+                    'error' => $e->getMessage(),
+                ]);
+                return null;
+            }
+
             // Store the original default connection
             $originalConnection = Config::get('database.default');
 
