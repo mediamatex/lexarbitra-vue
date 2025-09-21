@@ -255,9 +255,45 @@ class CaseFileController extends Controller
         // Switch back to main database after reading tenant data
         $this->caseDatabaseService->switchBackToMainDatabase();
 
+        // Load participants with their user information
+        $participants = $case->participants()
+            ->active()
+            ->with('user')
+            ->orderBy('is_primary', 'desc')
+            ->orderBy('role')
+            ->get()
+            ->map(function ($participant) {
+                return [
+                    'id' => $participant->id,
+                    'role' => $participant->role,
+                    'role_display' => \App\Models\CaseParticipant::getRoleDisplayNames()[$participant->role] ?? $participant->role,
+                    'role_description' => \App\Models\CaseParticipant::getRoleDescription($participant->role),
+                    'is_primary' => $participant->is_primary,
+                    'appointed_at' => $participant->appointed_at,
+                    'notes' => $participant->notes,
+                    'user' => [
+                        'id' => $participant->user->id,
+                        'name' => $participant->user->name,
+                        'email' => $participant->user->email,
+                        'title' => $participant->user->title,
+                        'law_firm' => $participant->user->law_firm,
+                        'avatar_url' => $participant->user->avatar_url,
+                    ],
+                    'permissions' => \App\Models\CaseParticipant::getRolePermissions($participant->role),
+                ];
+            });
+
+        // Get current user's role and permissions for this case
+        $currentUserRole = auth()->user()->getRoleInCase($case->id);
+        $currentUserPermissions = auth()->user()->getPermissionsInCase($case->id);
+
         return Inertia::render('CaseFiles/Show', [
             'caseFile' => $caseFile,
             'caseReference' => $case,
+            'participants' => $participants,
+            'currentUserRole' => $currentUserRole,
+            'currentUserPermissions' => $currentUserPermissions,
+            'canManageParticipants' => auth()->user()->can('manageParticipants', $case),
         ]);
     }
 
