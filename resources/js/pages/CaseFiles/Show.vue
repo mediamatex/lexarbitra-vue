@@ -64,13 +64,13 @@
                                 </div>
 
                                 <!-- Tenant Case Data (if available) -->
-                                <div v-if="hasTenantDatabase && caseFile.description" class="pt-4 border-t">
+                                <div v-if="caseFile.description" class="pt-4 border-t">
                                     <Label class="text-sm font-medium text-muted-foreground">Beschreibung</Label>
                                     <p class="mt-2 text-sm leading-relaxed">{{ caseFile.description }}</p>
                                 </div>
 
                                 <!-- Additional tenant data fields -->
-                                <div v-if="hasTenantDatabase" class="grid grid-cols-1 gap-4 md:grid-cols-2 pt-4 border-t">
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 pt-4 border-t">
                                     <div v-if="caseFile.dispute_value">
                                         <Label class="text-sm font-medium text-muted-foreground">Streitwert</Label>
                                         <p class="text-lg">{{ formatCurrency(caseFile.dispute_value, caseFile.currency) }}</p>
@@ -91,39 +91,6 @@
                             </CardContent>
                         </Card>
 
-                        <!-- Tenant Database Status -->
-                        <Card>
-                            <CardHeader>
-                                <CardTitle class="flex items-center gap-2">
-                                    <Database class="h-5 w-5" />
-                                    Datenbank-Status
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div v-if="hasTenantDatabase" class="flex items-center gap-3 p-4 bg-green-50 rounded-lg border border-green-200">
-                                    <div class="flex-shrink-0">
-                                        <CheckCircle class="h-6 w-6 text-green-600" />
-                                    </div>
-                                    <div>
-                                        <p class="text-sm font-medium text-green-800">Tenant-Datenbank aktiv</p>
-                                        <p class="text-sm text-green-600">
-                                            Fall verfügt über eine dedizierte Datenbank mit vollständigen Falldaten.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div v-else class="flex items-center gap-3 p-4 bg-amber-50 rounded-lg border border-amber-200">
-                                    <div class="flex-shrink-0">
-                                        <AlertCircle class="h-6 w-6 text-amber-600" />
-                                    </div>
-                                    <div>
-                                        <p class="text-sm font-medium text-amber-800">Nur Referenzdaten</p>
-                                        <p class="text-sm text-amber-600">
-                                            Fall hat noch keine dedizierte Datenbank oder Tenant-Daten konnten nicht geladen werden.
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
                     </div>
 
                     <!-- Sidebar -->
@@ -139,16 +106,6 @@
                                         <Edit class="mr-2 h-4 w-4" />
                                         Fall bearbeiten
                                     </Link>
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    class="w-full justify-start"
-                                    @click="testDatabase"
-                                    :disabled="testingDatabase"
-                                >
-                                    <Database class="mr-2 h-4 w-4" />
-                                    <span v-if="testingDatabase">Teste Datenbank...</span>
-                                    <span v-else>Datenbank testen</span>
                                 </Button>
                                 <Button
                                     variant="destructive"
@@ -202,16 +159,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Edit, FileText, Database, CheckCircle, AlertCircle, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, Edit, FileText, Trash2 } from 'lucide-vue-next'
 import { index, edit, destroy } from '@/routes/cases'
 
 const props = defineProps({
     caseFile: Object,
-    hasTenantDatabase: Boolean,
     caseReference: Object,
 })
-
-const testingDatabase = ref(false)
 
 const formatStatus = (status) => {
     const germanStatus = {
@@ -264,29 +218,6 @@ const formatCurrency = (value, currency = 'EUR') => {
     }).format(value)
 }
 
-const testDatabase = async () => {
-    testingDatabase.value = true
-    try {
-        const response = await fetch(`/cases/${props.caseFile.id}/test-database`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-            }
-        })
-        const result = await response.json()
-
-        if (result.success) {
-            alert('Datenbankverbindung erfolgreich getestet!')
-        } else {
-            alert(`Datenbanktest fehlgeschlagen: ${result.error}`)
-        }
-    } catch (error) {
-        alert('Fehler beim Testen der Datenbank')
-    } finally {
-        testingDatabase.value = false
-    }
-}
 
 const deleteCase = () => {
     if (confirm('Sind Sie sicher, dass Sie diesen Fall löschen möchten? Dies wird auch die zugehörige Datenbank löschen.')) {

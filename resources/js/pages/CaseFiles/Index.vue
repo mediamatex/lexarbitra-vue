@@ -29,7 +29,6 @@
                                     <TableHead>Aktenzeichen</TableHead>
                                     <TableHead>Titel</TableHead>
                                     <TableHead>Status</TableHead>
-                                    <TableHead>Datenbank</TableHead>
                                     <TableHead>Initiiert</TableHead>
                                     <TableHead class="text-right">Aktionen</TableHead>
                                 </TableRow>
@@ -48,14 +47,6 @@
                                     <TableCell>
                                         <Badge :variant="getStatusVariant(caseFile.status)">
                                             {{ formatStatus(caseFile.status) }}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge
-                                            :variant="caseFile.database_connection ? 'default' : 'destructive'"
-                                        >
-                                            <Database class="mr-1 h-3 w-3" />
-                                            {{ caseFile.database_connection ? 'Verbunden' : 'Keine Datenbank' }}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>
@@ -141,7 +132,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Eye, Edit, Trash2, Database, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Plus, Eye, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { create, show, edit, destroy } from '@/routes/cases'
 
 defineProps({
