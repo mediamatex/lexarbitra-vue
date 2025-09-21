@@ -16,11 +16,11 @@ class CaseFileController extends Controller
 
     public function index(): Response
     {
-        $caseReferences = CaseReference::latest()->paginate(15);
+        $cases = CaseReference::latest()->paginate(15);
 
         // Load case data from tenant databases
         $cases = [];
-        foreach ($caseReferences as $reference) {
+        foreach ($cases as $reference) {
             if ($reference->tenant_case_id) {
                 $connectionName = $this->caseDatabaseService->switchToCaseDatabase($reference);
 
@@ -56,10 +56,10 @@ class CaseFileController extends Controller
         return Inertia::render('CaseFiles/Index', [
             'cases' => [
                 'data' => $cases,
-                'current_page' => $caseReferences->currentPage(),
-                'last_page' => $caseReferences->lastPage(),
-                'per_page' => $caseReferences->perPage(),
-                'total' => $caseReferences->total(),
+                'current_page' => $cases->currentPage(),
+                'last_page' => $cases->lastPage(),
+                'per_page' => $cases->perPage(),
+                'total' => $cases->total(),
             ],
         ]);
     }
@@ -86,17 +86,17 @@ class CaseFileController extends Controller
 
         // Create case database and reference in one step
         try {
-            $caseReference = $this->caseDatabaseService->createCaseDatabase();
+            $case = $this->caseDatabaseService->createCaseDatabase();
 
             // Switch to the case database and run migrations
-            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
 
             if ($connectionName) {
                 try {
                     // Test tenant database connection first
                     logger()->info('Testing tenant database connection', [
                         'connection_name' => $connectionName,
-                        'case_id' => $caseReference->id,
+                        'case_id' => $case->id,
                     ]);
 
                     $testConnection = \DB::connection($connectionName)->getPdo();
@@ -230,18 +230,18 @@ class CaseFileController extends Controller
 
                     // Update the case reference with tenant case ID
                     try {
-                        $updateResult = $caseReference->update([
+                        $updateResult = $case->update([
                             'tenant_case_id' => $tenantCaseId,
                         ]);
 
                         logger()->info('Case reference updated with tenant case ID', [
-                            'case_reference_id' => $caseReference->id,
+                            'case_reference_id' => $case->id,
                             'tenant_case_id' => $tenantCaseId,
                             'update_result' => $updateResult,
                         ]);
                     } catch (\Exception $e) {
                         logger()->error('Failed to update case reference with tenant case ID', [
-                            'case_reference_id' => $caseReference->id,
+                            'case_reference_id' => $case->id,
                             'tenant_case_id' => $tenantCaseId,
                             'error' => $e->getMessage(),
                         ]);
@@ -249,7 +249,7 @@ class CaseFileController extends Controller
                     }
 
                     // Return the case reference
-                    $caseFile = $caseReference;
+                    $caseFile = $case;
 
                     // Switch back to main database
                     $this->caseDatabaseService->switchBackToMainDatabase();
@@ -257,26 +257,26 @@ class CaseFileController extends Controller
                 } catch (\Exception $e) {
                     logger()->error('Failed to setup tenant database or save data', [
                         'connection_name' => $connectionName,
-                        'case_id' => $caseReference->id,
+                        'case_id' => $case->id,
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString(),
                     ]);
 
                     // Continue without failing the entire case creation
                     // The case will exist in landlord DB even if tenant setup fails
-                    $caseFile = $caseReference;
+                    $caseFile = $case;
 
                     // Switch back to main database even if tenant setup failed
                     $this->caseDatabaseService->switchBackToMainDatabase();
                 }
             } else {
-                $caseFile = $caseReference;
+                $caseFile = $case;
             }
 
         } catch (\Exception $e) {
             // If database creation fails, clean up and show error
-            if (isset($caseReference)) {
-                $caseReference->delete();
+            if (isset($case)) {
+                $case->delete();
             }
 
             logger()->error('Failed to create case database', [
@@ -293,36 +293,36 @@ class CaseFileController extends Controller
             ->with('success', 'Falldatei erfolgreich erstellt.');
     }
 
-    public function show(CaseReference $caseReference): Response
+    public function show(CaseReference $case): Response
     {
         logger()->info('CaseFileController::show - Start', [
-            'case_reference_id' => $caseReference->id,
+            'case_reference_id' => $case->id,
             'url' => request()->url(),
             'method' => request()->method(),
             'user_id' => auth()->id(),
         ]);
 
         logger()->info('CaseFileController::show - Case reference details', [
-            'case_reference_id' => $caseReference->id,
-            'tenant_case_id' => $caseReference->tenant_case_id,
-            'database_name' => $caseReference->database_name,
-            'database_host' => $caseReference->database_host,
-            'connection_name' => $caseReference->connection_name,
-            'is_active' => $caseReference->is_active,
+            'case_reference_id' => $case->id,
+            'tenant_case_id' => $case->tenant_case_id,
+            'database_name' => $case->database_name,
+            'database_host' => $case->database_host,
+            'connection_name' => $case->connection_name,
+            'is_active' => $case->is_active,
         ]);
 
         $caseFile = null;
 
-        if ($caseReference->tenant_case_id) {
+        if ($case->tenant_case_id) {
             logger()->info('CaseFileController::show - Has tenant_case_id, attempting to load tenant data', [
-                'case_reference_id' => $caseReference->id,
-                'tenant_case_id' => $caseReference->tenant_case_id,
+                'case_reference_id' => $case->id,
+                'tenant_case_id' => $case->tenant_case_id,
             ]);
 
-            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
 
             logger()->info('CaseFileController::show - Database switch result', [
-                'case_reference_id' => $caseReference->id,
+                'case_reference_id' => $case->id,
                 'connection_name' => $connectionName,
                 'success' => $connectionName ? true : false,
             ]);
@@ -330,20 +330,20 @@ class CaseFileController extends Controller
             if ($connectionName) {
                 try {
                     logger()->info('CaseFileController::show - Attempting to query tenant database', [
-                        'case_reference_id' => $caseReference->id,
+                        'case_reference_id' => $case->id,
                         'connection_name' => $connectionName,
-                        'tenant_case_id' => $caseReference->tenant_case_id,
-                        'database_host' => $caseReference->database_host,
-                        'file_exists' => file_exists($caseReference->database_host),
+                        'tenant_case_id' => $case->tenant_case_id,
+                        'database_host' => $case->database_host,
+                        'file_exists' => file_exists($case->database_host),
                     ]);
 
                     $tenantCase = \DB::connection($connectionName)
                         ->table('case_files')
-                        ->where('id', $caseReference->tenant_case_id)
+                        ->where('id', $case->tenant_case_id)
                         ->first();
 
                     logger()->info('CaseFileController::show - Tenant query result', [
-                        'case_reference_id' => $caseReference->id,
+                        'case_reference_id' => $case->id,
                         'tenant_case_found' => $tenantCase ? true : false,
                         'tenant_case_data' => $tenantCase ? (array) $tenantCase : null,
                     ]);
@@ -351,20 +351,20 @@ class CaseFileController extends Controller
                     if ($tenantCase) {
                         // Merge tenant data with reference info
                         $caseFile = (object) array_merge((array) $tenantCase, [
-                            'reference_id' => $caseReference->id,
-                            'database_name' => $caseReference->database_name,
-                            'connection_name' => $caseReference->connection_name,
+                            'reference_id' => $case->id,
+                            'database_name' => $case->database_name,
+                            'connection_name' => $case->connection_name,
                         ]);
 
                         logger()->info('CaseFileController::show - Case file object created successfully', [
-                            'case_reference_id' => $caseReference->id,
+                            'case_reference_id' => $case->id,
                             'case_file_title' => $caseFile->title ?? 'No title',
                         ]);
                     }
                 } catch (\Exception $e) {
                     logger()->error('CaseFileController::show - Failed to load tenant case data', [
-                        'case_reference_id' => $caseReference->id,
-                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'case_reference_id' => $case->id,
+                        'tenant_case_id' => $case->tenant_case_id,
                         'connection_name' => $connectionName,
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString(),
@@ -372,25 +372,25 @@ class CaseFileController extends Controller
                 }
             } else {
                 logger()->warning('CaseFileController::show - Database switch failed', [
-                    'case_reference_id' => $caseReference->id,
-                    'database_name' => $caseReference->database_name,
-                    'database_host' => $caseReference->database_host,
+                    'case_reference_id' => $case->id,
+                    'database_name' => $case->database_name,
+                    'database_host' => $case->database_host,
                 ]);
             }
         } else {
             logger()->warning('CaseFileController::show - No tenant_case_id found', [
-                'case_reference_id' => $caseReference->id,
-                'database_name' => $caseReference->database_name,
-                'created_at' => $caseReference->created_at,
+                'case_reference_id' => $case->id,
+                'database_name' => $case->database_name,
+                'created_at' => $case->created_at,
             ]);
         }
 
         if (! $caseFile) {
             logger()->error('CaseFileController::show - About to abort with 404', [
-                'case_reference_id' => $caseReference->id,
-                'tenant_case_id' => $caseReference->tenant_case_id,
-                'has_tenant_case_id' => $caseReference->tenant_case_id ? true : false,
-                'reason' => $caseReference->tenant_case_id ? 'Tenant case not found or database unavailable' : 'No tenant_case_id set',
+                'case_reference_id' => $case->id,
+                'tenant_case_id' => $case->tenant_case_id,
+                'has_tenant_case_id' => $case->tenant_case_id ? true : false,
+                'reason' => $case->tenant_case_id ? 'Tenant case not found or database unavailable' : 'No tenant_case_id set',
             ]);
 
             abort(404, 'Case file not found or tenant database unavailable');
@@ -400,46 +400,46 @@ class CaseFileController extends Controller
         $this->caseDatabaseService->switchBackToMainDatabase();
 
         logger()->info('CaseFileController::show - Successfully returning case file view', [
-            'case_reference_id' => $caseReference->id,
+            'case_reference_id' => $case->id,
             'case_file_title' => $caseFile->title ?? 'No title',
         ]);
 
         return Inertia::render('CaseFiles/Show', [
             'caseFile' => $caseFile,
-            'caseReference' => $caseReference,
+            'caseReference' => $case,
         ]);
     }
 
-    public function edit(CaseReference $caseReference): Response
+    public function edit(CaseReference $case): Response
     {
         logger()->info('CaseFileController::edit - Start', [
-            'case_reference_id' => $caseReference->id,
+            'case_reference_id' => $case->id,
             'url' => request()->url(),
             'method' => request()->method(),
             'user_id' => auth()->id(),
         ]);
 
         logger()->info('CaseFileController::edit - Case reference details', [
-            'case_reference_id' => $caseReference->id,
-            'tenant_case_id' => $caseReference->tenant_case_id,
-            'database_name' => $caseReference->database_name,
-            'database_host' => $caseReference->database_host,
-            'connection_name' => $caseReference->connection_name,
-            'is_active' => $caseReference->is_active,
+            'case_reference_id' => $case->id,
+            'tenant_case_id' => $case->tenant_case_id,
+            'database_name' => $case->database_name,
+            'database_host' => $case->database_host,
+            'connection_name' => $case->connection_name,
+            'is_active' => $case->is_active,
         ]);
 
         $caseFile = null;
 
-        if ($caseReference->tenant_case_id) {
+        if ($case->tenant_case_id) {
             logger()->info('CaseFileController::edit - Has tenant_case_id, attempting to load tenant data', [
-                'case_reference_id' => $caseReference->id,
-                'tenant_case_id' => $caseReference->tenant_case_id,
+                'case_reference_id' => $case->id,
+                'tenant_case_id' => $case->tenant_case_id,
             ]);
 
-            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+            $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
 
             logger()->info('CaseFileController::edit - Database switch result', [
-                'case_reference_id' => $caseReference->id,
+                'case_reference_id' => $case->id,
                 'connection_name' => $connectionName,
                 'success' => $connectionName ? true : false,
             ]);
@@ -447,20 +447,20 @@ class CaseFileController extends Controller
             if ($connectionName) {
                 try {
                     logger()->info('CaseFileController::edit - Attempting to query tenant database', [
-                        'case_reference_id' => $caseReference->id,
+                        'case_reference_id' => $case->id,
                         'connection_name' => $connectionName,
-                        'tenant_case_id' => $caseReference->tenant_case_id,
-                        'database_host' => $caseReference->database_host,
-                        'file_exists' => file_exists($caseReference->database_host),
+                        'tenant_case_id' => $case->tenant_case_id,
+                        'database_host' => $case->database_host,
+                        'file_exists' => file_exists($case->database_host),
                     ]);
 
                     $tenantCase = \DB::connection($connectionName)
                         ->table('case_files')
-                        ->where('id', $caseReference->tenant_case_id)
+                        ->where('id', $case->tenant_case_id)
                         ->first();
 
                     logger()->info('CaseFileController::edit - Tenant query result', [
-                        'case_reference_id' => $caseReference->id,
+                        'case_reference_id' => $case->id,
                         'tenant_case_found' => $tenantCase ? true : false,
                         'tenant_case_data' => $tenantCase ? (array) $tenantCase : null,
                     ]);
@@ -468,20 +468,20 @@ class CaseFileController extends Controller
                     if ($tenantCase) {
                         // Merge tenant data with reference info for form submission
                         $caseFile = (object) array_merge((array) $tenantCase, [
-                            'reference_id' => $caseReference->id, // For form submission
-                            'database_name' => $caseReference->database_name,
-                            'connection_name' => $caseReference->connection_name,
+                            'reference_id' => $case->id, // For form submission
+                            'database_name' => $case->database_name,
+                            'connection_name' => $case->connection_name,
                         ]);
 
                         logger()->info('CaseFileController::edit - Case file object created successfully', [
-                            'case_reference_id' => $caseReference->id,
+                            'case_reference_id' => $case->id,
                             'case_file_title' => $caseFile->title ?? 'No title',
                         ]);
                     }
                 } catch (\Exception $e) {
                     logger()->error('CaseFileController::edit - Failed to load tenant case data for editing', [
-                        'case_reference_id' => $caseReference->id,
-                        'tenant_case_id' => $caseReference->tenant_case_id,
+                        'case_reference_id' => $case->id,
+                        'tenant_case_id' => $case->tenant_case_id,
                         'connection_name' => $connectionName,
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString(),
@@ -489,25 +489,25 @@ class CaseFileController extends Controller
                 }
             } else {
                 logger()->warning('CaseFileController::edit - Database switch failed', [
-                    'case_reference_id' => $caseReference->id,
-                    'database_name' => $caseReference->database_name,
-                    'database_host' => $caseReference->database_host,
+                    'case_reference_id' => $case->id,
+                    'database_name' => $case->database_name,
+                    'database_host' => $case->database_host,
                 ]);
             }
         } else {
             logger()->warning('CaseFileController::edit - No tenant_case_id found', [
-                'case_reference_id' => $caseReference->id,
-                'database_name' => $caseReference->database_name,
-                'created_at' => $caseReference->created_at,
+                'case_reference_id' => $case->id,
+                'database_name' => $case->database_name,
+                'created_at' => $case->created_at,
             ]);
         }
 
         if (! $caseFile) {
             logger()->error('CaseFileController::edit - About to abort with 404', [
-                'case_reference_id' => $caseReference->id,
-                'tenant_case_id' => $caseReference->tenant_case_id,
-                'has_tenant_case_id' => $caseReference->tenant_case_id ? true : false,
-                'reason' => $caseReference->tenant_case_id ? 'Tenant case not found or database unavailable' : 'No tenant_case_id set',
+                'case_reference_id' => $case->id,
+                'tenant_case_id' => $case->tenant_case_id,
+                'has_tenant_case_id' => $case->tenant_case_id ? true : false,
+                'reason' => $case->tenant_case_id ? 'Tenant case not found or database unavailable' : 'No tenant_case_id set',
             ]);
 
             abort(404, 'Case file not found or tenant database unavailable');
@@ -517,17 +517,17 @@ class CaseFileController extends Controller
         $this->caseDatabaseService->switchBackToMainDatabase();
 
         logger()->info('CaseFileController::edit - Successfully returning case file edit view', [
-            'case_reference_id' => $caseReference->id,
+            'case_reference_id' => $case->id,
             'case_file_title' => $caseFile->title ?? 'No title',
         ]);
 
         return Inertia::render('CaseFiles/Edit', [
             'caseFile' => $caseFile,
-            'caseReference' => $caseReference,
+            'caseReference' => $case,
         ]);
     }
 
-    public function update(Request $request, CaseReference $caseReference)
+    public function update(Request $request, CaseReference $case)
     {
         $validated = $request->validate([
             'case_number' => 'required|string',
@@ -535,11 +535,11 @@ class CaseFileController extends Controller
             'status' => 'nullable|string',
         ]);
 
-        if (! $caseReference->tenant_case_id) {
+        if (! $case->tenant_case_id) {
             abort(404, 'Case file not found or tenant database unavailable');
         }
 
-        $connectionName = $this->caseDatabaseService->switchToCaseDatabase($caseReference);
+        $connectionName = $this->caseDatabaseService->switchToCaseDatabase($case);
 
         if (! $connectionName) {
             return redirect()->back()
@@ -551,7 +551,7 @@ class CaseFileController extends Controller
             // Update only in tenant database
             $updated = \DB::connection($connectionName)
                 ->table('case_files')
-                ->where('id', $caseReference->tenant_case_id)
+                ->where('id', $case->tenant_case_id)
                 ->update([
                     'case_number' => $validated['case_number'],
                     'title' => $validated['title'],
@@ -564,21 +564,21 @@ class CaseFileController extends Controller
             }
 
             logger()->info('Case updated successfully in tenant database', [
-                'case_reference_id' => $caseReference->id,
-                'tenant_case_id' => $caseReference->tenant_case_id,
+                'case_reference_id' => $case->id,
+                'tenant_case_id' => $case->tenant_case_id,
                 'connection' => $connectionName,
             ]);
 
             // Switch back to main database after successful update
             $this->caseDatabaseService->switchBackToMainDatabase();
 
-            return redirect()->route('cases.show', $caseReference)
+            return redirect()->route('cases.show', $case)
                 ->with('success', 'Falldatei erfolgreich aktualisiert.');
 
         } catch (\Exception $e) {
             logger()->error('Failed to update case in tenant database', [
-                'case_reference_id' => $caseReference->id,
-                'tenant_case_id' => $caseReference->tenant_case_id,
+                'case_reference_id' => $case->id,
+                'tenant_case_id' => $case->tenant_case_id,
                 'connection' => $connectionName,
                 'error' => $e->getMessage(),
             ]);
@@ -592,14 +592,14 @@ class CaseFileController extends Controller
         }
     }
 
-    public function destroy(CaseReference $caseReference)
+    public function destroy(CaseReference $case)
     {
         // Delete case database
         try {
-            $this->caseDatabaseService->deleteCaseDatabase($caseReference);
+            $this->caseDatabaseService->deleteCaseDatabase($case);
         } catch (\Exception $e) {
             logger()->error('Failed to delete case database', [
-                'case_reference_id' => $caseReference->id,
+                'case_reference_id' => $case->id,
                 'error' => $e->getMessage(),
             ]);
         }
@@ -608,9 +608,9 @@ class CaseFileController extends Controller
             ->with('success', 'Falldatei erfolgreich gelöscht.');
     }
 
-    public function testDatabase(CaseReference $caseReference)
+    public function testDatabase(CaseReference $case)
     {
-        $result = $this->caseDatabaseService->testCaseDatabase($caseReference);
+        $result = $this->caseDatabaseService->testCaseDatabase($case);
 
         return response()->json($result);
     }
