@@ -21,7 +21,10 @@ class CaseFileController extends Controller
         // Load case data from tenant databases
         $cases = [];
         foreach ($caseReferences as $reference) {
+            $case = null;
+
             if ($reference->tenant_case_id) {
+                // Case has tenant data - try to load it
                 $connectionName = $this->caseDatabaseService->switchToCaseDatabase($reference);
 
                 if ($connectionName) {
@@ -41,7 +44,6 @@ class CaseFileController extends Controller
                                 'database_name' => $reference->database_name,
                                 'connection_name' => $reference->connection_name,
                             ]);
-                            $cases[] = $case;
                         }
                     } catch (\Exception $e) {
                         logger()->warning('Failed to load tenant case data for index', [
@@ -51,6 +53,23 @@ class CaseFileController extends Controller
                     }
                 }
             }
+
+            // If no tenant data found or failed to load, create fallback case from reference
+            if (!$case) {
+                $case = (object) [
+                    'id' => $reference->id, // Case reference ID for routing
+                    'case_number' => 'CASE-' . substr($reference->id, 0, 8), // Generate fallback case number
+                    'title' => 'Unvollständiger Fall', // Placeholder title
+                    'status' => 'draft', // Default status
+                    'initiated_at' => $reference->created_at, // Use reference creation date
+                    'tenant_case_id' => $reference->tenant_case_id,
+                    'reference_id' => $reference->id,
+                    'database_name' => $reference->database_name,
+                    'is_incomplete' => true, // Flag to identify incomplete cases
+                ];
+            }
+
+            $cases[] = $case;
         }
 
         // Switch back to main database after processing all cases
